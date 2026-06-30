@@ -374,6 +374,8 @@ async fn session_rate_command_rates_last_response() {
     let _ = std::fs::remove_file(&path);
 
     let mut session = Session::new(config, &path, "test").unwrap();
+    // Route to the mock adapter so tests don't make real network calls.
+    session.process("/model mock/test").await.unwrap();
 
     // Send a prompt to get a response from a model
     session.process("hello").await.unwrap();
@@ -458,6 +460,8 @@ async fn session_reset_ratings_command() {
     let _ = std::fs::remove_file(&path);
 
     let mut session = Session::new(config, &path, "test").unwrap();
+    // Route to the mock adapter so tests don't make real network calls.
+    session.process("/model mock/test").await.unwrap();
 
     // Rate a model first
     session.process("hello").await.unwrap();

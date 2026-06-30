@@ -21,10 +21,10 @@ thread_local! {
 
 #[tokio::test]
 async fn session_persists_across_restart() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     session.process("hello").await.unwrap();
 
-    let restored = restore_session();
+    let restored = restore_session().await;
     let status = restored.status();
     assert!(
         status.message_count > 0,
@@ -37,7 +37,7 @@ async fn session_uses_sqlite_storage() {
     // Session state is stored in SQLite (rusqlite), not JSON.
     // Verified by the fact that Session::new() opens a rusqlite::Connection
     // and persist_message() uses SQL INSERT.
-    let session = create_session();
+    let session = create_session().await;
     let status = session.status();
     // A fresh session has 0 non-system messages
     assert_eq!(status.message_count, 0);
@@ -49,7 +49,7 @@ async fn session_uses_sqlite_storage() {
 
 #[tokio::test]
 async fn context_window_prevents_overflow() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     for i in 0..100 {
         let _ = session.process(&format!("message number {i}")).await;
     }
@@ -64,7 +64,7 @@ async fn context_window_prevents_overflow() {
 
 #[tokio::test]
 async fn sliding_window_drops_oldest_messages() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     for i in 0..50 {
         let _ = session.process(&format!("message {i}")).await;
     }
@@ -74,7 +74,7 @@ async fn sliding_window_drops_oldest_messages() {
 
 #[tokio::test]
 async fn system_prompt_is_never_dropped() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     for i in 0..100 {
         let _ = session.process(&format!("filler message {i}")).await;
     }
@@ -93,7 +93,7 @@ async fn system_prompt_is_never_dropped() {
 
 #[tokio::test]
 async fn cost_tracking_accumulates_per_session() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     session.process("hello").await.unwrap();
     session.process("analyze this").await.unwrap();
 
@@ -106,7 +106,7 @@ async fn cost_tracking_accumulates_per_session() {
 
 #[tokio::test]
 async fn cost_limit_blocks_execution() {
-    let mut session = create_session_with_low_budget();
+    let mut session = create_session_with_low_budget().await;
     for _ in 0..1000 {
         match session.process("expensive prompt").await {
             Ok(_) => continue,
@@ -123,7 +123,7 @@ async fn cost_limit_blocks_execution() {
 
 #[tokio::test]
 async fn slash_clear_resets_session() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     session.process("hello").await.unwrap();
     assert!(session.status().message_count > 0);
 
@@ -137,7 +137,7 @@ async fn slash_clear_resets_session() {
 
 #[tokio::test]
 async fn slash_model_overrides_routing() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     session
         .process("/model anthropic/claude-opus")
         .await
@@ -152,7 +152,7 @@ async fn slash_model_overrides_routing() {
 
 #[tokio::test]
 async fn slash_cost_shows_session_spend() {
-    let mut session = create_session();
+    let mut session = create_session().await;
     session.process("hello").await.unwrap();
     let result = session.process("/cost").await.unwrap();
     assert!(!result.events.is_empty());
@@ -166,32 +166,39 @@ fn load_test_config() -> workhorse::config::AppConfig {
     workhorse::config::load_config("config").unwrap()
 }
 
-fn create_session() -> Box<dyn SessionController> {
+async fn create_session() -> Box<dyn SessionController> {
     let config = load_test_config();
     let id = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir().join(format!("workhorse-test-{id}.db"));
     let _ = std::fs::remove_file(&path);
     let path_str = path.to_str().unwrap().to_string();
     TEST_DB_PATH.with(|p| *p.borrow_mut() = Some(path_str.clone()));
-    Box::new(Session::new(config, &path_str, "test").unwrap())
+    let mut session = Session::new(config, &path_str, "test").unwrap();
+    // Route to the mock adapter so tests don't make real network calls.
+    session.process("/model mock/test").await.unwrap();
+    Box::new(session)
 }
 
-fn restore_session() -> Box<dyn SessionController> {
+async fn restore_session() -> Box<dyn SessionController> {
     let config = load_test_config();
     let path_str = TEST_DB_PATH
         .with(|p| p.borrow().clone())
         .expect("no DB path set -- call create_session first");
-    Box::new(Session::new(config, &path_str, "test").unwrap())
+    let mut session = Session::new(config, &path_str, "test").unwrap();
+    session.process("/model mock/test").await.unwrap();
+    Box::new(session)
 }
 
-fn create_session_with_low_budget() -> Box<dyn SessionController> {
+async fn create_session_with_low_budget() -> Box<dyn SessionController> {
     let mut config = load_test_config();
     config.session.cost_tracking.hard_limit_usd = 0.01; // 1 cent
     let id = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir().join(format!("workhorse-test-{id}.db"));
     let _ = std::fs::remove_file(&path);
     let path_str = path.to_str().unwrap().to_string();
-    Box::new(Session::new(config, &path_str, "test").unwrap())
+    let mut session = Session::new(config, &path_str, "test").unwrap();
+    session.process("/model mock/test").await.unwrap();
+    Box::new(session)
 }
 
 #[allow(dead_code)]

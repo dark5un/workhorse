@@ -107,7 +107,10 @@ impl Default for ToolsDefaults {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProviderConfig {
     pub base_url: String,
-    pub api_key_env: String,
+    /// Env var name holding the API key. Optional — local providers
+    /// (LM Studio, Ollama) don't require auth and can omit this.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
     #[serde(default)]
     pub pricing: HashMap<String, PricingConfig>,
 }

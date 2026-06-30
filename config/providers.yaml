@@ -1,4 +1,29 @@
 providers:
+  # ------------------------------------------------------------------
+  # Local providers (no API key required)
+  # ------------------------------------------------------------------
+
+  # LM Studio — runs a local OpenAI-compatible server.
+  # Start it from: LM Studio > Developer tab > Start Server (default port 1234).
+  # Load models in LM Studio before starting the server.
+  # The model IDs below must match what /v1/models returns.
+  lm-studio:
+    base_url: "http://localhost:1234/v1"
+    # api_key_env omitted — LM Studio requires no authentication.
+    pricing: {}  # local inference is free
+
+  # Ollama — another popular local LLM runtime.
+  # Start it with: ollama serve (default port 11434).
+  # Ollama exposes an OpenAI-compatible endpoint at /v1.
+  # Uncomment to enable:
+  # ollama:
+  #   base_url: "http://localhost:11434/v1"
+  #   pricing: {}
+
+  # ------------------------------------------------------------------
+  # Cloud providers (API key required)
+  # ------------------------------------------------------------------
+
   openai:
     base_url: "https://api.openai.com/v1"
     api_key_env: "OPENAI_API_KEY"
@@ -6,6 +31,7 @@ providers:
       gpt-4o: { input: 250, output: 500 }
       gpt-4o-mini: { input: 15, output: 30 }
       gpt-4-turbo: { input: 500, output: 1500 }
+
   anthropic:
     base_url: "https://api.anthropic.com"
     api_key_env: "ANTHROPIC_API_KEY"
@@ -13,6 +39,7 @@ providers:
       claude-sonnet: { input: 300, output: 1500 }
       claude-haiku: { input: 25, output: 125 }
       claude-opus: { input: 500, output: 2500 }
+
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"

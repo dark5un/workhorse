@@ -16,19 +16,26 @@ use crate::core::{Cost, Message, MessageContent, ModelId, Role};
 /// OpenAI-compatible adapter. Uses reqwest for HTTP calls.
 ///
 /// The base_url, api_key_env, and pricing come from config.
-/// One adapter instance per provider (OpenAI, OpenRouter, etc.).
+/// One adapter instance per provider (OpenAI, OpenRouter, LM Studio, etc.).
+///
+/// `base_url` should include the API version prefix (e.g.
+/// `https://api.openai.com/v1` or `http://localhost:1234/v1`). The adapter
+/// appends `/chat/completions` — it does NOT add another `/v1`.
 pub struct OpenAiCompatAdapter {
     base_url: String,
-    api_key_env: String,
+    api_key_env: Option<String>,
     pricing: HashMap<String, (u64, u64)>,
     client: reqwest::Client,
 }
 
 impl OpenAiCompatAdapter {
     /// Create a new adapter for a provider.
+    ///
+    /// Pass `None` for `api_key_env` on providers that don't require auth
+    /// (e.g. a local LM Studio server).
     pub fn new(
         base_url: String,
-        api_key_env: String,
+        api_key_env: Option<String>,
         pricing: HashMap<String, (u64, u64)>,
     ) -> Self {
         Self {
@@ -42,24 +49,27 @@ impl OpenAiCompatAdapter {
     /// Create from provider config.
     pub fn from_provider_config(
         base_url: &str,
-        api_key_env: &str,
+        api_key_env: Option<&str>,
         pricing: &HashMap<String, crate::config::PricingConfig>,
     ) -> Self {
         let pricing_map: HashMap<String, (u64, u64)> = pricing
             .iter()
             .map(|(k, v)| (k.clone(), (v.input, v.output)))
             .collect();
-        Self::new(base_url.to_string(), api_key_env.to_string(), pricing_map)
+        Self::new(
+            base_url.to_string(),
+            api_key_env.map(|s| s.to_string()),
+            pricing_map,
+        )
     }
 
-    /// Get the API key from the environment.
-    fn get_api_key(&self) -> Result<String, LLMError> {
-        std::env::var(&self.api_key_env).map_err(|_| {
-            LLMError::Auth(format!(
-                "API key not set: env var '{}' not found",
-                self.api_key_env
-            ))
-        })
+    /// Get the API key from the environment, if one is configured.
+    /// Returns None when no env var is configured or it isn't set — the
+    /// request is then sent without an Authorization header, which is correct
+    /// for local providers like LM Studio that don't require auth.
+    fn get_api_key(&self) -> Option<String> {
+        let env_name = self.api_key_env.as_ref()?;
+        std::env::var(env_name).ok()
     }
 
     /// Compute cost from token usage and pricing table.
@@ -117,9 +127,8 @@ impl LLMAdapter for OpenAiCompatAdapter {
         messages: Vec<Message>,
         config: ModelConfig,
     ) -> Result<Vec<ResponseEvent>, LLMError> {
-        let api_key = self.get_api_key()?;
         let model_name = Self::model_name(model);
-        let url = format!("{}/v1/chat/completions", self.base_url);
+        let url = format!("{}/chat/completions", self.base_url);
 
         let mut body = serde_json::json!({
             "model": model_name,
@@ -135,12 +144,19 @@ impl LLMAdapter for OpenAiCompatAdapter {
             }
         }
 
-        let response = self
+        let mut request = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .json(&body);
+
+        // Attach Authorization header only when an API key is available.
+        // Local providers (LM Studio, Ollama) don't require auth.
+        if let Some(api_key) = self.get_api_key() {
+            request = request.header("Authorization", format!("Bearer {api_key}"));
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|e| LLMError::Network(e.to_string()))?;
@@ -259,7 +275,7 @@ pub fn build_adapters_from_config(
     for (provider_name, provider_config) in &config.providers {
         let adapter = OpenAiCompatAdapter::from_provider_config(
             &provider_config.base_url,
-            &provider_config.api_key_env,
+            provider_config.api_key_env.as_deref(),
             &provider_config.pricing,
         );
         adapters.insert(provider_name.clone(), Box::new(adapter));
