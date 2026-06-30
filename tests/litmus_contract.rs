@@ -324,6 +324,7 @@ fn complexity_result_carries_source_and_signals() {
         confidence: 0.85,
         signals: vec!["keyword:debug".to_string(), "length:250".to_string()],
         source: AnalysisSource::Heuristic,
+        task_type: myharness::core::TaskType::General,
     };
     assert_eq!(result.tier, ComplexityTier::Complex);
     assert!((result.confidence - 0.85).abs() < 0.001);

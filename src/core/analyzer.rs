@@ -27,6 +27,7 @@ pub struct ComplexityResult {
     pub confidence: f32,
     pub signals: Vec<String>,
     pub source: AnalysisSource,
+    pub task_type: TaskType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,6 +36,83 @@ pub enum ComplexityTier {
     Medium,
     Complex,
     Expert,
+}
+
+/// Task type dimension for finer-grained model ranking.
+/// A model great at code might be bad at creative writing, even within
+/// the same complexity tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TaskType {
+    Code,
+    Creative,
+    Analysis,
+    Qa,
+    Translation,
+    General,
+}
+
+impl TaskType {
+    /// Infer task type from prompt content (heuristic, no LLM call).
+    pub fn infer(prompt: &str) -> Self {
+        let lower = prompt.to_lowercase();
+        if lower.contains("code")
+            || lower.contains("function")
+            || lower.contains("debug")
+            || lower.contains("compile")
+            || lower.contains("refactor")
+            || lower.contains("bug")
+            || lower.contains("implement")
+            || lower.contains("class")
+        {
+            Self::Code
+        } else if lower.contains("write")
+            || lower.contains("poem")
+            || lower.contains("story")
+            || lower.contains("creative")
+            || lower.contains("essay")
+        {
+            Self::Creative
+        } else if lower.contains("analyze")
+            || lower.contains("summarize")
+            || lower.contains("compare")
+            || lower.contains("evaluate")
+            || lower.contains("review")
+        {
+            Self::Analysis
+        } else if lower.contains("translate") || lower.contains("translation") {
+            Self::Translation
+        } else if lower.contains("what is")
+            || lower.contains("how does")
+            || lower.contains("explain")
+            || lower.contains("why")
+        {
+            Self::Qa
+        } else {
+            Self::General
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Code => "code",
+            Self::Creative => "creative",
+            Self::Analysis => "analysis",
+            Self::Qa => "qa",
+            Self::Translation => "translation",
+            Self::General => "general",
+        }
+    }
+
+    pub fn parse_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "code" => Self::Code,
+            "creative" => Self::Creative,
+            "analysis" => Self::Analysis,
+            "qa" => Self::Qa,
+            "translation" => Self::Translation,
+            _ => Self::General,
+        }
+    }
 }
 
 impl ComplexityTier {
@@ -253,6 +331,7 @@ impl HeuristicAnalyzer {
                 confidence,
                 signals: final_signals,
                 source: AnalysisSource::Heuristic,
+                task_type: TaskType::infer(prompt),
             })
         } else {
             // No keyword match: use length-based classification.
@@ -297,6 +376,7 @@ impl HeuristicAnalyzer {
                 confidence: 0.4,
                 signals: final_signals,
                 source: AnalysisSource::Heuristic,
+                task_type: TaskType::infer(prompt),
             })
         }
     }
@@ -408,6 +488,7 @@ impl PromptAnalyzer for ClassifierAnalyzer {
                         sigs.push(format!("classifier_reasoning:{}", response.reasoning));
                         sigs
                     },
+                    task_type: TaskType::infer(prompt),
                     source: AnalysisSource::Classifier {
                         model: self.model_name.clone(),
                     },
@@ -420,6 +501,7 @@ impl PromptAnalyzer for ClassifierAnalyzer {
                         tier: heuristic_result.tier,
                         confidence: heuristic_result.confidence,
                         signals: heuristic_result.signals.clone(),
+                        task_type: TaskType::infer(prompt),
                         source: AnalysisSource::FallbackHeuristic {
                             reason: e.to_string(),
                         },

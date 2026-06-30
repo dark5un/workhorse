@@ -2,7 +2,7 @@
 //!
 //! Phase B tests: rating recording, Bayesian scoring, scope, slash commands.
 
-use myharness::core::{ComplexityTier, ModelId, RankingConfig, RankingEngine, Scope};
+use myharness::core::{ComplexityTier, ModelId, RankingConfig, RankingEngine, Scope, TaskType};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -36,10 +36,20 @@ fn record_rating_and_retrieve_score() {
     let model = test_model("openai", "gpt-4o");
 
     engine
-        .record_rating(&model, ComplexityTier::Complex, 4, None, None, None)
+        .record_rating(
+            &model,
+            ComplexityTier::Complex,
+            TaskType::General,
+            4,
+            None,
+            None,
+            None,
+        )
         .unwrap();
 
-    let score = engine.get_score(&model, ComplexityTier::Complex).unwrap();
+    let score = engine
+        .get_score(&model, ComplexityTier::Complex, TaskType::General)
+        .unwrap();
     // With 1 rating of 4 and prior 3.0, score should be between 3.0 and 4.0
     assert!(
         score > 3.0 && score < 4.0,
@@ -55,11 +65,21 @@ fn record_multiple_ratings_score_converges() {
     // Record 10 ratings of 5
     for _ in 0..10 {
         engine
-            .record_rating(&model, ComplexityTier::Expert, 5, None, None, None)
+            .record_rating(
+                &model,
+                ComplexityTier::Expert,
+                TaskType::General,
+                5,
+                None,
+                None,
+                None,
+            )
             .unwrap();
     }
 
-    let score = engine.get_score(&model, ComplexityTier::Expert).unwrap();
+    let score = engine
+        .get_score(&model, ComplexityTier::Expert, TaskType::General)
+        .unwrap();
     // With 10 ratings of 5, score should be close to 5 but pulled toward prior
     assert!(
         score > 4.5,
@@ -72,10 +92,26 @@ fn reject_invalid_rating() {
     let engine = create_ranking_engine();
     let model = test_model("openai", "gpt-4o");
 
-    let result = engine.record_rating(&model, ComplexityTier::Simple, 0, None, None, None);
+    let result = engine.record_rating(
+        &model,
+        ComplexityTier::Simple,
+        TaskType::General,
+        0,
+        None,
+        None,
+        None,
+    );
     assert!(result.is_err(), "rating 0 must be rejected");
 
-    let result = engine.record_rating(&model, ComplexityTier::Simple, 6, None, None, None);
+    let result = engine.record_rating(
+        &model,
+        ComplexityTier::Simple,
+        TaskType::General,
+        6,
+        None,
+        None,
+        None,
+    );
     assert!(result.is_err(), "rating 6 must be rejected");
 }
 
@@ -84,7 +120,9 @@ fn unrated_model_returns_prior_score() {
     let engine = create_ranking_engine();
     let model = test_model("anthropic", "claude-opus");
 
-    let score = engine.get_score(&model, ComplexityTier::Complex).unwrap();
+    let score = engine
+        .get_score(&model, ComplexityTier::Complex, TaskType::General)
+        .unwrap();
     assert!(
         (score - 3.0).abs() < 0.001,
         "unrated model should return prior (3.0), got {score}"
@@ -103,7 +141,15 @@ fn rankings_sorted_by_score_descending() {
     let model_a = test_model("openai", "gpt-4o");
     for _ in 0..5 {
         engine
-            .record_rating(&model_a, ComplexityTier::Complex, 5, None, None, None)
+            .record_rating(
+                &model_a,
+                ComplexityTier::Complex,
+                TaskType::General,
+                5,
+                None,
+                None,
+                None,
+            )
             .unwrap();
     }
 
@@ -111,11 +157,21 @@ fn rankings_sorted_by_score_descending() {
     let model_b = test_model("anthropic", "claude-haiku");
     for _ in 0..5 {
         engine
-            .record_rating(&model_b, ComplexityTier::Complex, 2, None, None, None)
+            .record_rating(
+                &model_b,
+                ComplexityTier::Complex,
+                TaskType::General,
+                2,
+                None,
+                None,
+                None,
+            )
             .unwrap();
     }
 
-    let rankings = engine.get_rankings(ComplexityTier::Complex).unwrap();
+    let rankings = engine
+        .get_rankings(ComplexityTier::Complex, TaskType::General)
+        .unwrap();
     assert!(rankings.len() >= 2);
     // Model A should rank higher than Model B
     assert_eq!(rankings[0].model_id, model_a.as_str());
@@ -125,7 +181,9 @@ fn rankings_sorted_by_score_descending() {
 #[test]
 fn rankings_empty_for_unrated_tier() {
     let engine = create_ranking_engine();
-    let rankings = engine.get_rankings(ComplexityTier::Simple).unwrap();
+    let rankings = engine
+        .get_rankings(ComplexityTier::Simple, TaskType::General)
+        .unwrap();
     assert!(rankings.is_empty());
 }
 
@@ -136,11 +194,21 @@ fn rankings_include_sample_count() {
 
     for _ in 0..3 {
         engine
-            .record_rating(&model, ComplexityTier::Medium, 4, None, None, None)
+            .record_rating(
+                &model,
+                ComplexityTier::Medium,
+                TaskType::General,
+                4,
+                None,
+                None,
+                None,
+            )
             .unwrap();
     }
 
-    let rankings = engine.get_rankings(ComplexityTier::Medium).unwrap();
+    let rankings = engine
+        .get_rankings(ComplexityTier::Medium, TaskType::General)
+        .unwrap();
     assert_eq!(rankings.len(), 1);
     assert_eq!(rankings[0].sample_count, 3);
 }
@@ -155,11 +223,19 @@ fn reset_ratings_clears_current_scope() {
     let model = test_model("openai", "gpt-4o");
 
     engine
-        .record_rating(&model, ComplexityTier::Complex, 4, None, None, None)
+        .record_rating(
+            &model,
+            ComplexityTier::Complex,
+            TaskType::General,
+            4,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     assert!(
         !engine
-            .get_rankings(ComplexityTier::Complex)
+            .get_rankings(ComplexityTier::Complex, TaskType::General)
             .unwrap()
             .is_empty()
     );
@@ -168,7 +244,7 @@ fn reset_ratings_clears_current_scope() {
     assert_eq!(deleted, 1);
     assert!(
         engine
-            .get_rankings(ComplexityTier::Complex)
+            .get_rankings(ComplexityTier::Complex, TaskType::General)
             .unwrap()
             .is_empty()
     );
@@ -180,23 +256,39 @@ fn reset_ratings_global_clears_all() {
     let model = test_model("openai", "gpt-4o");
 
     engine
-        .record_rating(&model, ComplexityTier::Complex, 5, None, None, None)
+        .record_rating(
+            &model,
+            ComplexityTier::Complex,
+            TaskType::General,
+            5,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     engine
-        .record_rating(&model, ComplexityTier::Simple, 3, None, None, None)
+        .record_rating(
+            &model,
+            ComplexityTier::Simple,
+            TaskType::General,
+            3,
+            None,
+            None,
+            None,
+        )
         .unwrap();
 
     let deleted = engine.reset_ratings(&Scope::Global).unwrap();
     assert_eq!(deleted, 2);
     assert!(
         engine
-            .get_rankings(ComplexityTier::Complex)
+            .get_rankings(ComplexityTier::Complex, TaskType::General)
             .unwrap()
             .is_empty()
     );
     assert!(
         engine
-            .get_rankings(ComplexityTier::Simple)
+            .get_rankings(ComplexityTier::Simple, TaskType::General)
             .unwrap()
             .is_empty()
     );

@@ -113,6 +113,7 @@ async fn router_selects_model_for_each_tier() {
             confidence: 0.9,
             signals: vec![],
             source: AnalysisSource::Heuristic,
+            task_type: myharness::core::TaskType::General,
         };
         let spec = router.route(&complexity, None).await.unwrap();
         assert!(
@@ -131,6 +132,7 @@ async fn router_user_override_bypasses_routing() {
         confidence: 0.99,
         signals: vec![],
         source: AnalysisSource::Heuristic,
+        task_type: myharness::core::TaskType::General,
     };
     let override_model = ModelId::parse("anthropic/claude-opus").unwrap();
     let spec = router
@@ -148,6 +150,7 @@ async fn router_model_spec_uses_model_id_not_bare_string() {
         confidence: 0.8,
         signals: vec![],
         source: AnalysisSource::Heuristic,
+        task_type: myharness::core::TaskType::General,
     };
     let spec = router.route(&complexity, None).await.unwrap();
     assert!(!spec.model_id.provider.is_empty());
@@ -162,6 +165,7 @@ async fn router_budget_limit_uses_cost_type() {
         confidence: 0.85,
         signals: vec![],
         source: AnalysisSource::Heuristic,
+        task_type: myharness::core::TaskType::General,
     };
     let spec = router.route(&complexity, None).await.unwrap();
     if let Some(budget) = spec.budget_limit {

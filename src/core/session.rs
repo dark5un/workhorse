@@ -398,7 +398,15 @@ impl Session {
             let tier = self.last_tier.unwrap_or(ComplexityTier::Medium);
 
             self.ranking
-                .record_rating(model, tier, rating, None, None, None)
+                .record_rating(
+                    model,
+                    tier,
+                    crate::core::TaskType::General,
+                    rating,
+                    None,
+                    None,
+                    None,
+                )
                 .map_err(|e| SessionError::Storage(e.to_string()))?;
 
             return Ok(vec![SessionEvent::Text(format!(
@@ -427,7 +435,15 @@ impl Session {
         let tier = self.last_tier.unwrap_or(ComplexityTier::Medium);
 
         self.ranking
-            .record_rating(&model, tier, rating, None, None, None)
+            .record_rating(
+                &model,
+                tier,
+                crate::core::TaskType::General,
+                rating,
+                None,
+                None,
+                None,
+            )
             .map_err(|e| SessionError::Storage(e.to_string()))?;
 
         Ok(vec![SessionEvent::Text(format!(
@@ -458,7 +474,7 @@ impl Session {
 
         let entries = self
             .ranking
-            .get_rankings(tier)
+            .get_rankings(tier, crate::core::TaskType::General)
             .map_err(|e| SessionError::Storage(e.to_string()))?;
 
         if entries.is_empty() {

@@ -8,7 +8,7 @@ use rusqlite::params;
 use std::sync::Mutex;
 use thiserror::Error;
 
-use crate::core::{ComplexityTier, ModelId};
+use crate::core::{ComplexityTier, ModelId, TaskType};
 
 /// Errors for ranking operations.
 #[derive(Debug, Error)]
@@ -113,6 +113,7 @@ impl RankingEngine {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_id TEXT NOT NULL,
                 tier TEXT NOT NULL,
+                task_type TEXT NOT NULL DEFAULT 'general',
                 rating INTEGER NOT NULL,
                 cost_cents INTEGER,
                 input_tokens INTEGER,
@@ -121,7 +122,7 @@ impl RankingEngine {
                 timestamp TEXT NOT NULL DEFAULT (datetime('now'))
             );
             CREATE INDEX IF NOT EXISTS idx_ratings_lookup
-                ON model_ratings(model_id, tier, project_scope);",
+                ON model_ratings(model_id, tier, task_type, project_scope);",
         );
 
         Self {
@@ -149,10 +150,12 @@ impl RankingEngine {
     }
 
     /// Record a rating for a model response.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_rating(
         &self,
         model_id: &ModelId,
         tier: ComplexityTier,
+        task_type: TaskType,
         rating: u32,
         cost_cents: Option<u64>,
         input_tokens: Option<u32>,
@@ -171,11 +174,12 @@ impl RankingEngine {
             .map_err(|e| RankingError::Storage(e.to_string()))?;
 
         conn.execute(
-            "INSERT INTO model_ratings (model_id, tier, rating, cost_cents, input_tokens, output_tokens, project_scope)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_ratings (model_id, tier, task_type, rating, cost_cents, input_tokens, output_tokens, project_scope)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 model_id.as_str(),
                 tier_str,
+                task_type.as_str(),
                 rating as i64,
                 cost_cents.map(|c| c as i64),
                 input_tokens.map(|t| t as i64),
@@ -190,8 +194,14 @@ impl RankingEngine {
 
     /// Get the Bayesian-smoothed score for a model+tier.
     /// Returns prior (3.0) if no ratings exist.
-    pub fn get_score(&self, model_id: &ModelId, tier: ComplexityTier) -> Result<f64, RankingError> {
+    pub fn get_score(
+        &self,
+        model_id: &ModelId,
+        tier: ComplexityTier,
+        task_type: TaskType,
+    ) -> Result<f64, RankingError> {
         let tier_str = tier_str(tier);
+        let tt_str = task_type.as_str();
         let scope_val = self.scope.db_value();
 
         let conn = self
@@ -213,13 +223,13 @@ impl RankingEngine {
             .prepare(
                 "SELECT rating, julianday('now') - julianday(timestamp) as days_ago
                  FROM model_ratings
-                 WHERE model_id = ? AND tier = ? AND (project_scope IS ? OR project_scope = ?)",
+                 WHERE model_id = ? AND tier = ? AND task_type = ? AND (project_scope IS ? OR project_scope = ?)",
             )
             .map_err(|e| RankingError::Storage(e.to_string()))?;
 
         let rows = stmt
             .query_map(
-                params![model_id.as_str(), tier_str, &scope_val, &scope_val],
+                params![model_id.as_str(), tier_str, tt_str, &scope_val, &scope_val],
                 |row| {
                     let rating: f64 = row.get(0)?;
                     let days_ago: f64 = row.get(1).unwrap_or(0.0);
@@ -249,8 +259,13 @@ impl RankingEngine {
     }
 
     /// Get rankings for a tier, sorted by score descending.
-    pub fn get_rankings(&self, tier: ComplexityTier) -> Result<Vec<RankingEntry>, RankingError> {
+    pub fn get_rankings(
+        &self,
+        tier: ComplexityTier,
+        task_type: TaskType,
+    ) -> Result<Vec<RankingEntry>, RankingError> {
         let tier_str = tier_str(tier);
+        let tt_str = task_type.as_str();
         let scope_val = self.scope.db_value();
         let prior_weight = self.config.min_samples as f64;
         let prior = self.config.prior;
@@ -266,12 +281,12 @@ impl RankingEngine {
             .prepare(
                 "SELECT model_id, rating, julianday('now') - julianday(timestamp) as days_ago
                  FROM model_ratings
-                 WHERE tier = ? AND (project_scope IS ? OR project_scope = ?)",
+                 WHERE tier = ? AND task_type = ? AND (project_scope IS ? OR project_scope = ?)",
             )
             .map_err(|e| RankingError::Storage(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![tier_str, &scope_val, &scope_val], |row| {
+            .query_map(params![tier_str, tt_str, &scope_val, &scope_val], |row| {
                 let model_id: String = row.get(0)?;
                 let rating: f64 = row.get(1)?;
                 let days_ago: f64 = row.get(2).unwrap_or(0.0);

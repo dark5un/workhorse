@@ -11,7 +11,7 @@ pub mod session;
 
 pub use analyzer::{
     AnalysisError, AnalysisSource, ClassificationResponse, ClassifierAnalyzer, ClassifierModel,
-    ComplexityResult, ComplexityTier, HeuristicAnalyzer, PromptAnalyzer,
+    ComplexityResult, ComplexityTier, HeuristicAnalyzer, PromptAnalyzer, TaskType,
 };
 pub use learning_router::LearningRouter;
 pub use ranking::{RankingConfig, RankingEngine, RankingEntry, RankingError, Scope};

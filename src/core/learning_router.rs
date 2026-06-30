@@ -52,20 +52,19 @@ impl LearningRouter {
     fn reorder_by_score(
         models: &[ModelId],
         tier: ComplexityTier,
+        task_type: super::TaskType,
         ranking: &RankingEngine,
     ) -> Vec<ModelId> {
         let min_samples = ranking.min_samples();
 
-        // Get scores for all models
         let mut scored: Vec<(ModelId, f64, u32)> = Vec::new();
         let mut unscored: Vec<ModelId> = Vec::new();
 
         for model in models {
-            match ranking.get_score(model, tier) {
+            match ranking.get_score(model, tier, task_type) {
                 Ok(score) => {
-                    // Check sample count by looking at rankings
                     let has_enough = ranking
-                        .get_rankings(tier)
+                        .get_rankings(tier, task_type)
                         .map(|entries| {
                             entries
                                 .iter()
@@ -102,6 +101,7 @@ impl LearningRouter {
     fn maybe_explore(
         models: &[ModelId],
         tier: ComplexityTier,
+        task_type: super::TaskType,
         ranking: &RankingEngine,
     ) -> Option<ModelId> {
         let rate = ranking.exploration_rate();
@@ -121,7 +121,7 @@ impl LearningRouter {
             .iter()
             .filter(|m| {
                 ranking
-                    .get_rankings(tier)
+                    .get_rankings(tier, task_type)
                     .map(|entries| {
                         !entries
                             .iter()
@@ -162,15 +162,24 @@ impl super::Router for LearningRouter {
             .chain(spec.fallback_chain.iter().cloned())
             .collect::<Vec<_>>();
 
-        let reordered = Self::reorder_by_score(&all_models, complexity.tier, &self.ranking);
+        let reordered = Self::reorder_by_score(
+            &all_models,
+            complexity.tier,
+            complexity.task_type,
+            &self.ranking,
+        );
 
         if reordered.is_empty() {
             return Ok(spec);
         }
 
         // Check for exploration
-        if let Some(explore_model) = Self::maybe_explore(&reordered, complexity.tier, &self.ranking)
-        {
+        if let Some(explore_model) = Self::maybe_explore(
+            &reordered,
+            complexity.tier,
+            complexity.task_type,
+            &self.ranking,
+        ) {
             tracing::info!(
                 model = %explore_model.as_str(),
                 tier = ?complexity.tier,
