@@ -2,9 +2,11 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use thiserror::Error;
 
-use super::{ComplexityResult, Cost};
+use super::{ComplexityResult, ComplexityTier, Cost};
+use crate::config::HeuristicConfig;
 
 /// Routes a complexity result to a model specification.
 ///
@@ -80,4 +82,96 @@ pub enum RoutingError {
     ModelNotFound(String),
     #[error("config error: {0}")]
     Config(String),
+}
+
+// ============================================================
+// Config-driven Router Implementation
+// ============================================================
+
+/// Config-driven router that maps ComplexityTier to ModelSpec using
+/// tier→model mappings from config. All model IDs and fallback chains
+/// come from config. The router does not pre-validate provider availability.
+pub struct ConfigRouter {
+    /// Map from ComplexityTier to ordered list of ModelIds.
+    /// First model is primary; rest form the fallback chain.
+    tier_models: HashMap<ComplexityTier, Vec<ModelId>>,
+    /// Budget limit from session config (applies to all routes).
+    budget_limit: Option<Cost>,
+}
+
+impl ConfigRouter {
+    /// Create a router from heuristic config (tier→model mappings).
+    pub fn new(config: &HeuristicConfig, budget_limit: Option<Cost>) -> Result<Self, RoutingError> {
+        let mut tier_models = HashMap::new();
+
+        for (key, tier_config) in &config.tiers {
+            let tier = ComplexityTier::from_config_key(key)
+                .ok_or_else(|| RoutingError::Config(format!("unknown tier key: {key}")))?;
+
+            let models: Vec<ModelId> = tier_config
+                .models
+                .iter()
+                .filter_map(|s| ModelId::parse(s))
+                .collect();
+
+            if models.is_empty() {
+                return Err(RoutingError::NoModelsForTier);
+            }
+
+            tier_models.insert(tier, models);
+        }
+
+        Ok(Self {
+            tier_models,
+            budget_limit,
+        })
+    }
+
+    /// Create from a full AppConfig (convenience for tests).
+    pub fn from_app_config(config: &crate::config::AppConfig) -> Result<Self, RoutingError> {
+        let budget_limit = if config.session.cost_tracking.enabled {
+            Some(Cost::from_usd(config.session.cost_tracking.hard_limit_usd))
+        } else {
+            None
+        };
+        Self::new(&config.analyzer.heuristic, budget_limit)
+    }
+}
+
+#[async_trait]
+impl Router for ConfigRouter {
+    async fn route(
+        &self,
+        complexity: &ComplexityResult,
+        user_override: Option<&ModelId>,
+    ) -> Result<ModelSpec, RoutingError> {
+        // User override bypasses routing entirely
+        if let Some(model_id) = user_override {
+            return Ok(ModelSpec {
+                model_id: model_id.clone(),
+                fallback_chain: vec![],
+                budget_limit: self.budget_limit,
+            });
+        }
+
+        // Look up models for the complexity tier
+        let models = self
+            .tier_models
+            .get(&complexity.tier)
+            .ok_or(RoutingError::NoModelsForTier)?;
+
+        if models.is_empty() {
+            return Err(RoutingError::NoModelsForTier);
+        }
+
+        // First model is primary; rest form the fallback chain
+        let model_id = models[0].clone();
+        let fallback_chain = models[1..].to_vec();
+
+        Ok(ModelSpec {
+            model_id,
+            fallback_chain,
+            budget_limit: self.budget_limit,
+        })
+    }
 }

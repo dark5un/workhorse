@@ -11,7 +11,7 @@ pub use analyzer::{
     AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, HeuristicAnalyzer,
     PromptAnalyzer,
 };
-pub use router::{ModelId, ModelSpec, Router, RoutingError};
+pub use router::{ConfigRouter, ModelId, ModelSpec, Router, RoutingError};
 pub use session::{SessionController, SessionError, SessionState};
 
 use serde::{Deserialize, Serialize};

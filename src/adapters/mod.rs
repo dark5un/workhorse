@@ -4,6 +4,10 @@
 //! SDKs directly. Adapters normalize provider-specific tool-call schemas into
 //! the common `ResponseEvent` type.
 
+pub mod mock;
+
+pub use mock::MockAdapter;
+
 use async_trait::async_trait;
 use thiserror::Error;
 

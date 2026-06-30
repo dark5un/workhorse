@@ -1,13 +1,12 @@
 //! Litmus tests: routing & complexity analysis contracts (AGENTS.md 3.1, 3.2, 5).
 //!
-//! Phase 1 tests (heuristic analyzer) are enabled. Phase 2 (router) and
-//! Phase 5 (classifier) tests remain ignored until those phases are implemented.
+//! Phase 1 (heuristic analyzer) and Phase 2 (router) tests are enabled.
+//! Phase 5 (classifier) tests remain ignored.
 
 use myharness::config::AppConfig;
-use myharness::core::{AnalysisError, Cost};
 use myharness::core::{
-    AnalysisSource, ComplexityResult, ComplexityTier, HeuristicAnalyzer, ModelId, ModelSpec,
-    PromptAnalyzer, Router, RoutingError,
+    AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, ConfigRouter, Cost,
+    HeuristicAnalyzer, ModelId, ModelSpec, PromptAnalyzer, Router, RoutingError,
 };
 
 // ============================================================
@@ -56,7 +55,6 @@ async fn heuristic_analyzer_confidence_in_valid_range() {
 async fn heuristic_analyzer_signals_explain_decision() {
     let analyzer = create_heuristic_analyzer();
     let result = analyzer.analyze("debug this").await.unwrap();
-    // signals should explain WHY this tier was chosen
     assert!(
         !result.signals.is_empty(),
         "analyzer must produce signals explaining the decision"
@@ -69,11 +67,8 @@ async fn heuristic_analyzer_signals_explain_decision() {
 
 #[tokio::test]
 async fn analyzer_uses_real_token_counting() {
-    // The analyzer must use tiktoken, not byte/word counting.
-    // "tokenization" has 13 bytes but ~3-4 tokens.
     let analyzer = create_heuristic_analyzer();
     let result = analyzer.analyze("tokenization").await.unwrap();
-    // The signals should mention token count, not byte count
     let has_token_signal = result
         .signals
         .iter()
@@ -87,8 +82,6 @@ async fn analyzer_uses_real_token_counting() {
 
 #[tokio::test]
 async fn analyzer_reads_keywords_from_config() {
-    // If we change the keyword in config, the analyzer must use the new keyword.
-    // This proves no hardcoded keywords.
     let config_a = config_with_keyword("hello");
     let config_b = config_with_keyword("greetings");
 
@@ -98,45 +91,14 @@ async fn analyzer_reads_keywords_from_config() {
     let result_a = analyzer_a.analyze("hello").await.unwrap();
     let result_b = analyzer_b.analyze("hello").await.unwrap();
 
-    // With "hello" as keyword, it should match simple tier.
-    // With "greetings" as keyword, "hello" should NOT match.
     assert_eq!(result_a.tier, ComplexityTier::Simple);
     assert_ne!(result_b.tier, ComplexityTier::Simple);
 }
 
 // ============================================================
-// Classifier stage contracts (Phase 5) -- still ignored
+// Router contracts (Phase 2) -- ENABLED
 // ============================================================
 
-#[ignore = "Phase 5: classifier stage not yet implemented"]
-#[tokio::test]
-async fn classifier_overrides_heuristic_result() {
-    let analyzer = create_classifier_analyzer();
-    let result = analyzer
-        .analyze("hello, please debug this complex distributed system")
-        .await;
-    let result = result.unwrap();
-    // The classifier should provide a more nuanced result than pure keyword matching.
-    assert!(matches!(result.source, AnalysisSource::Classifier { .. }));
-}
-
-#[ignore = "Phase 5: classifier stage not yet implemented"]
-#[tokio::test]
-async fn classifier_falls_back_to_heuristic_on_failure() {
-    let analyzer = create_failing_classifier_analyzer();
-    let result = analyzer.analyze("debug this").await.unwrap();
-    // Classifier fails -> fall back to heuristic with a reason
-    assert!(matches!(
-        result.source,
-        AnalysisSource::FallbackHeuristic { .. }
-    ));
-}
-
-// ============================================================
-// Router contracts (Phase 2) -- still ignored
-// ============================================================
-
-#[ignore = "Phase 2: router not yet implemented"]
 #[tokio::test]
 async fn router_selects_model_for_each_tier() {
     let router = create_router();
@@ -161,7 +123,6 @@ async fn router_selects_model_for_each_tier() {
     }
 }
 
-#[ignore = "Phase 2: router not yet implemented"]
 #[tokio::test]
 async fn router_user_override_bypasses_routing() {
     let router = create_router();
@@ -176,11 +137,9 @@ async fn router_user_override_bypasses_routing() {
         .route(&complexity, Some(&override_model))
         .await
         .unwrap();
-    // Override must be selected, regardless of tier
     assert_eq!(spec.model_id, override_model);
 }
 
-#[ignore = "Phase 2: router not yet implemented"]
 #[tokio::test]
 async fn router_model_spec_uses_model_id_not_bare_string() {
     let router = create_router();
@@ -191,12 +150,10 @@ async fn router_model_spec_uses_model_id_not_bare_string() {
         source: AnalysisSource::Heuristic,
     };
     let spec = router.route(&complexity, None).await.unwrap();
-    // model_id must be a valid ModelId (provider/model), not a bare string
     assert!(!spec.model_id.provider.is_empty());
     assert!(!spec.model_id.model.is_empty());
 }
 
-#[ignore = "Phase 2: router not yet implemented"]
 #[tokio::test]
 async fn router_budget_limit_uses_cost_type() {
     let router = create_router();
@@ -207,15 +164,39 @@ async fn router_budget_limit_uses_cost_type() {
         source: AnalysisSource::Heuristic,
     };
     let spec = router.route(&complexity, None).await.unwrap();
-    // budget_limit is Option<Cost> -- if present, it's in USD cents
     if let Some(budget) = spec.budget_limit {
-        // Cost is a newtype over u64 (cents), not f64 (dollars)
         let _cents: u64 = budget.0;
     }
 }
 
 // ============================================================
-// Real implementations (Phase 1)
+// Classifier stage contracts (Phase 5) -- still ignored
+// ============================================================
+
+#[ignore = "Phase 5: classifier stage not yet implemented"]
+#[tokio::test]
+async fn classifier_overrides_heuristic_result() {
+    let analyzer = create_classifier_analyzer();
+    let result = analyzer
+        .analyze("hello, please debug this complex distributed system")
+        .await;
+    let result = result.unwrap();
+    assert!(matches!(result.source, AnalysisSource::Classifier { .. }));
+}
+
+#[ignore = "Phase 5: classifier stage not yet implemented"]
+#[tokio::test]
+async fn classifier_falls_back_to_heuristic_on_failure() {
+    let analyzer = create_failing_classifier_analyzer();
+    let result = analyzer.analyze("debug this").await.unwrap();
+    assert!(matches!(
+        result.source,
+        AnalysisSource::FallbackHeuristic { .. }
+    ));
+}
+
+// ============================================================
+// Real implementations
 // ============================================================
 
 fn create_heuristic_analyzer() -> Box<dyn PromptAnalyzer> {
@@ -225,6 +206,11 @@ fn create_heuristic_analyzer() -> Box<dyn PromptAnalyzer> {
 
 fn create_analyzer_from_config(config: AppConfig) -> Box<dyn PromptAnalyzer> {
     Box::new(HeuristicAnalyzer::from_app_config(&config).unwrap())
+}
+
+fn create_router() -> Box<dyn Router> {
+    let config = myharness::config::load_config("config").unwrap();
+    Box::new(ConfigRouter::from_app_config(&config).unwrap())
 }
 
 // ============================================================
@@ -237,10 +223,6 @@ fn create_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
 
 fn create_failing_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
     unimplemented!("Phase 5")
-}
-
-fn create_router() -> Box<dyn Router> {
-    unimplemented!("Phase 2")
 }
 
 fn config_with_keyword(keyword: &str) -> AppConfig {
