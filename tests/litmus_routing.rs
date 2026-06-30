@@ -170,10 +170,9 @@ async fn router_budget_limit_uses_cost_type() {
 }
 
 // ============================================================
-// Classifier stage contracts (Phase 5) -- still ignored
+// Classifier stage contracts (Phase 5) -- ENABLED
 // ============================================================
 
-#[ignore = "Phase 5: classifier stage not yet implemented"]
 #[tokio::test]
 async fn classifier_overrides_heuristic_result() {
     let analyzer = create_classifier_analyzer();
@@ -184,7 +183,6 @@ async fn classifier_overrides_heuristic_result() {
     assert!(matches!(result.source, AnalysisSource::Classifier { .. }));
 }
 
-#[ignore = "Phase 5: classifier stage not yet implemented"]
 #[tokio::test]
 async fn classifier_falls_back_to_heuristic_on_failure() {
     let analyzer = create_failing_classifier_analyzer();
@@ -214,15 +212,69 @@ fn create_router() -> Box<dyn Router> {
 }
 
 // ============================================================
-// Stubs for future phases
+// Classifier implementations (Phase 5)
 // ============================================================
 
+use async_trait::async_trait;
+use myharness::core::{ClassificationResponse, ClassifierAnalyzer, ClassifierModel};
+
 fn create_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
-    unimplemented!("Phase 5")
+    let config = myharness::config::load_config("config").unwrap();
+    let heuristic = HeuristicAnalyzer::from_app_config(&config).unwrap();
+    Box::new(ClassifierAnalyzer::new(
+        heuristic,
+        Box::new(MockClassifierModel),
+        "openai/gpt-4o-mini".to_string(),
+        true,
+    ))
 }
 
 fn create_failing_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
-    unimplemented!("Phase 5")
+    let config = myharness::config::load_config("config").unwrap();
+    let heuristic = HeuristicAnalyzer::from_app_config(&config).unwrap();
+    Box::new(ClassifierAnalyzer::new(
+        heuristic,
+        Box::new(FailingClassifierModel),
+        "openai/gpt-4o-mini".to_string(),
+        true,
+    ))
+}
+
+/// Mock classifier model that always succeeds with a deterministic response.
+struct MockClassifierModel;
+
+#[async_trait]
+impl ClassifierModel for MockClassifierModel {
+    async fn classify(&self, prompt: &str) -> Result<ClassificationResponse, AnalysisError> {
+        // Simulate a classifier that returns a structured response.
+        // In a real implementation, this would call an LLM with JSON mode.
+        let tier = if prompt.contains("debug") || prompt.contains("distributed") {
+            ComplexityTier::Complex
+        } else if prompt.contains("reason") || prompt.contains("plan") {
+            ComplexityTier::Expert
+        } else if prompt.contains("analyze") || prompt.contains("summarize") {
+            ComplexityTier::Medium
+        } else {
+            ComplexityTier::Simple
+        };
+        Ok(ClassificationResponse {
+            tier,
+            confidence: 0.85,
+            reasoning: format!("classified based on prompt content: {prompt}"),
+        })
+    }
+}
+
+/// Mock classifier model that always fails (simulates network error, parse error, etc.).
+struct FailingClassifierModel;
+
+#[async_trait]
+impl ClassifierModel for FailingClassifierModel {
+    async fn classify(&self, _prompt: &str) -> Result<ClassificationResponse, AnalysisError> {
+        Err(AnalysisError::Classifier(
+            "mock classifier model failure".to_string(),
+        ))
+    }
 }
 
 fn config_with_keyword(keyword: &str) -> AppConfig {

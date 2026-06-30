@@ -315,3 +315,119 @@ enum StructuralSignal {
     Json,
     MultiStep,
 }
+
+// ============================================================
+// Classifier Model Trait + Classification Response
+// ============================================================
+
+/// Response from a classifier model.
+#[derive(Debug, Clone)]
+pub struct ClassificationResponse {
+    pub tier: ComplexityTier,
+    pub confidence: f32,
+    pub reasoning: String,
+}
+
+/// Trait for models that classify prompt complexity via an LLM call.
+///
+/// Real implementations use an LLMAdapter with structured output (JSON mode).
+/// Test implementations return deterministic responses.
+#[async_trait]
+pub trait ClassifierModel: Send + Sync {
+    async fn classify(&self, prompt: &str) -> Result<ClassificationResponse, AnalysisError>;
+}
+
+// ============================================================
+// Classifier Analyzer (two-stage: heuristic + classifier)
+// ============================================================
+
+/// Two-stage analyzer: runs the heuristic first, then optionally calls
+/// a classifier model to override the result.
+///
+/// If the classifier succeeds, its result is used with `AnalysisSource::Classifier`.
+/// If the classifier fails and `fallback_on_error` is true, the heuristic
+/// result is used with `AnalysisSource::FallbackHeuristic`.
+/// If `fallback_on_error` is false, the classifier error propagates.
+pub struct ClassifierAnalyzer {
+    heuristic: HeuristicAnalyzer,
+    model: Box<dyn ClassifierModel>,
+    model_name: String,
+    fallback_on_error: bool,
+}
+
+impl ClassifierAnalyzer {
+    pub fn new(
+        heuristic: HeuristicAnalyzer,
+        model: Box<dyn ClassifierModel>,
+        model_name: String,
+        fallback_on_error: bool,
+    ) -> Self {
+        Self {
+            heuristic,
+            model,
+            model_name,
+            fallback_on_error,
+        }
+    }
+
+    /// Create from app config. Uses the classifier config section.
+    /// Returns None if classifier is not enabled in config.
+    pub fn from_app_config(
+        config: &crate::config::AppConfig,
+        model: Box<dyn ClassifierModel>,
+    ) -> Option<Self> {
+        let classifier_config = config.analyzer.classifier.as_ref()?;
+        if !classifier_config.enabled {
+            return None;
+        }
+        let heuristic = HeuristicAnalyzer::from_app_config(config).ok()?;
+        Some(Self::new(
+            heuristic,
+            model,
+            classifier_config.model.clone(),
+            classifier_config.fallback_on_error,
+        ))
+    }
+}
+
+#[async_trait]
+impl PromptAnalyzer for ClassifierAnalyzer {
+    async fn analyze(&self, prompt: &str) -> Result<ComplexityResult, AnalysisError> {
+        // Run heuristic first (always available)
+        let heuristic_result = self.heuristic.analyze(prompt).await?;
+
+        // Try classifier
+        match self.model.classify(prompt).await {
+            Ok(response) => {
+                // Classifier succeeds: override heuristic result
+                Ok(ComplexityResult {
+                    tier: response.tier,
+                    confidence: response.confidence,
+                    signals: {
+                        let mut sigs = heuristic_result.signals.clone();
+                        sigs.push(format!("classifier_reasoning:{}", response.reasoning));
+                        sigs
+                    },
+                    source: AnalysisSource::Classifier {
+                        model: self.model_name.clone(),
+                    },
+                })
+            }
+            Err(e) => {
+                // Classifier fails
+                if self.fallback_on_error {
+                    Ok(ComplexityResult {
+                        tier: heuristic_result.tier,
+                        confidence: heuristic_result.confidence,
+                        signals: heuristic_result.signals.clone(),
+                        source: AnalysisSource::FallbackHeuristic {
+                            reason: e.to_string(),
+                        },
+                    })
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
