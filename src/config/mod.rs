@@ -126,6 +126,8 @@ pub struct SessionConfig {
     pub storage: String,
     pub path: String,
     pub context_window: ContextWindowConfig,
+    #[serde(default)]
+    pub generation: GenerationConfig,
     pub system_prompt_file: String,
     pub cost_tracking: CostTrackingConfig,
     #[serde(default)]
@@ -145,6 +147,32 @@ pub struct ContextWindowConfig {
 pub struct SummarizeConfig {
     pub model: String,
     pub trigger_at_pct: u8,
+}
+
+/// Generation parameters sent to the LLM adapter for each completion request.
+///
+/// `max_tokens` is optional: if `None`, the harness discovers it from the
+/// provider's API at startup (LM Studio /api/v0/models, OpenRouter /v1/models).
+/// If discovery fails, a default of 4096 is used.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerationConfig {
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    #[serde(default = "default_temperature")]
+    pub temperature: f32,
+}
+
+fn default_temperature() -> f32 {
+    0.7
+}
+
+impl Default for GenerationConfig {
+    fn default() -> Self {
+        Self {
+            max_tokens: None,
+            temperature: default_temperature(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

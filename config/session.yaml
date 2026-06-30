@@ -5,6 +5,13 @@ session:
     strategy: "sliding_window"
     max_tokens: 128000
     sticky_system_prompt: true
+  # Generation parameters sent to the LLM adapter.
+  # max_tokens is optional: if commented out, the harness discovers it
+  # automatically from the provider's API (LM Studio, OpenRouter).
+  # If discovery fails, a default of 4096 is used.
+  generation:
+    # max_tokens: 4096  # uncomment to override auto-discovery
+    temperature: 0.7
   system_prompt_file: "config/system_prompt.md"
   cost_tracking:
     enabled: true

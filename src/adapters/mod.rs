@@ -16,6 +16,9 @@ pub use retry::{RetryError, RetryPolicy};
 #[cfg(feature = "providers")]
 pub use openai_compat::{OpenAiCompatAdapter, build_adapters_from_config};
 
+// Re-export ModelInfo for consumers.
+pub use self::ModelInfo as DiscoveredModelInfo;
+
 use async_trait::async_trait;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -39,6 +42,17 @@ pub trait LLMAdapter: Send + Sync {
     ) -> Result<Vec<ResponseEvent>, LLMError>;
 
     fn capabilities(&self) -> ModelCapabilities;
+
+    /// Discover available models and their metadata from the provider's API.
+    ///
+    /// Returns a list of `ModelInfo` entries. If the provider's API doesn't
+    /// expose context window or max output token info, those fields will be
+    /// `None` and the caller should fall back to config defaults.
+    ///
+    /// Default implementation returns an empty vec (no discovery).
+    async fn discover_models(&self) -> Result<Vec<ModelInfo>, LLMError> {
+        Ok(vec![])
+    }
 }
 
 /// Normalized provider response. Adapters translate provider-specific
@@ -98,6 +112,25 @@ pub struct ModelCapabilities {
     pub max_context_tokens: usize,
 }
 
+/// Discovered model metadata from a provider's API.
+///
+/// Populated at startup by querying the provider's models endpoint.
+/// Used to auto-configure `max_tokens` so users don't have to set it manually.
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    /// Model name as the provider expects it (without provider prefix).
+    /// E.g. "zai-org/glm-4.7-flash", "gpt-4o".
+    pub model_id: String,
+    /// Maximum context window the model supports (input + output combined).
+    /// From LM Studio: `max_context_length` (or `loaded_context_length` if smaller).
+    /// From OpenRouter: `context_length`.
+    pub max_context_tokens: Option<usize>,
+    /// Maximum output tokens the model can generate in a single response.
+    /// From OpenRouter: `top_provider.max_completion_tokens`.
+    /// From LM Studio: inferred from `loaded_context_length`.
+    pub max_output_tokens: Option<usize>,
+}
+
 #[derive(Debug, Error)]
 pub enum LLMError {
     #[error("network error: {0}")]
@@ -153,5 +186,88 @@ impl AdapterFactory {
             .get(&model.provider)
             .map(|a| a.as_ref())
             .ok_or_else(|| LLMError::ProviderNotConfigured(model.provider.clone()))
+    }
+
+    /// Discover models from all configured providers.
+    ///
+    /// Queries each adapter's `discover_models()` endpoint. Providers that
+    /// are unreachable or don't support discovery are silently skipped
+    /// (logged via tracing). Returns a map of `provider/model` -> ModelInfo.
+    ///
+    /// This is called at startup to auto-configure `max_tokens` based on
+    /// what the provider actually supports, so users don't have to set it
+    /// manually in config.
+    pub async fn discover_all(&self) -> HashMap<String, ModelInfo> {
+        let mut discovered = HashMap::new();
+
+        for (provider_name, adapter) in &self.adapters {
+            match adapter.discover_models().await {
+                Ok(models) => {
+                    let count = models.len();
+                    for model in models {
+                        let key = format!("{provider_name}/{}", model.model_id);
+                        tracing::debug!(
+                            provider = %provider_name,
+                            model = %model.model_id,
+                            max_context = ?model.max_context_tokens,
+                            max_output = ?model.max_output_tokens,
+                            "discovered model"
+                        );
+                        discovered.insert(key, model);
+                    }
+                    tracing::info!(
+                        provider = %provider_name,
+                        count,
+                        "discovered models from provider"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        provider = %provider_name,
+                        error = %e,
+                        "model discovery failed, using config defaults"
+                    );
+                }
+            }
+        }
+
+        discovered
+    }
+
+    /// Get the adapter for a model ID, falling back through the chain.
+    ///
+    /// Tries the primary model first. If its provider isn't configured,
+    /// tries each fallback model in order. Returns the first available
+    /// adapter + the model ID that matched.
+    ///
+    /// This lets users comment out providers in config without breaking
+    /// routing — the harness just falls through to the next provider.
+    pub fn get_adapter_with_fallback<'a>(
+        &'a self,
+        primary: &ModelId,
+        fallback_chain: &[ModelId],
+    ) -> Result<(&'a dyn LLMAdapter, ModelId), LLMError> {
+        // Try primary first
+        if let Some(adapter) = self.adapters.get(&primary.provider) {
+            return Ok((adapter.as_ref(), primary.clone()));
+        }
+
+        // Fall through the chain
+        for model in fallback_chain {
+            if let Some(adapter) = self.adapters.get(&model.provider) {
+                tracing::info!(
+                    primary = %primary,
+                    fallback = %model,
+                    "primary provider not configured, using fallback"
+                );
+                return Ok((adapter.as_ref(), model.clone()));
+            }
+        }
+
+        Err(LLMError::ProviderNotConfigured(format!(
+            "no adapter available for {} or any of its {} fallbacks",
+            primary,
+            fallback_chain.len()
+        )))
     }
 }

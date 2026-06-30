@@ -4,10 +4,11 @@
 //! sliding window context management, cost tracking, and slash commands.
 
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use thiserror::Error;
 
-use crate::adapters::{AdapterFactory, ModelConfig, ResponseEvent, Usage};
+use crate::adapters::{AdapterFactory, ModelConfig, ModelInfo, ResponseEvent, Usage};
 use crate::config::AppConfig;
 use crate::core::analyzer::HeuristicAnalyzer;
 use crate::core::learning_router::LearningRouter;
@@ -86,6 +87,11 @@ pub struct Session {
     last_tier: Option<ComplexityTier>,
     /// Ranking engine for model effectiveness tracking (shared with LearningRouter).
     ranking: std::sync::Arc<RankingEngine>,
+    /// Discovered model metadata from provider APIs. Populated lazily on first
+    /// `process()` call. Keyed by `provider/model` (canonical ModelId format).
+    model_info: std::sync::Mutex<HashMap<String, ModelInfo>>,
+    /// Whether model discovery has been attempted (avoids retrying on every call).
+    discovery_attempted: std::sync::atomic::AtomicBool,
 }
 
 impl Session {
@@ -161,6 +167,8 @@ impl Session {
             last_model_used: None,
             last_tier: None,
             ranking,
+            model_info: Mutex::new(HashMap::new()),
+            discovery_attempted: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -634,16 +642,60 @@ impl SessionController for Session {
         self.last_model_used = Some(model_spec.model_id.clone());
         self.last_tier = Some(complexity.tier);
 
-        // Get adapter for the selected model's provider
-        let adapter = self
+        // Lazily discover model metadata from provider APIs on first call.
+        // This populates self.model_info with context window and max output
+        // token info so we don't need the user to configure max_tokens.
+        if !self
+            .discovery_attempted
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            let discovered = self.adapter_factory.discover_all().await;
+            if !discovered.is_empty() {
+                let mut info = self.model_info.lock().map_err(|e| {
+                    SessionError::Storage(e.to_string())
+                })?;
+                *info = discovered;
+            }
+        }
+
+        // Get adapter for the selected model, falling back through the chain.
+        // This lets users comment out providers in config (e.g. when they
+        // don't have an API key) without breaking routing.
+        let (adapter, effective_model_id) = self
             .adapter_factory
-            .get_adapter(&model_spec.model_id)
+            .get_adapter_with_fallback(&model_spec.model_id, &model_spec.fallback_chain)
             .map_err(|e| SessionError::Adapter(e.to_string()))?;
 
-        // Build model config
+        // If we fell back to a different model, update tracking
+        if effective_model_id != model_spec.model_id {
+            self.last_model_used = Some(effective_model_id.clone());
+            tracing::info!(
+                primary = %model_spec.model_id,
+                effective = %effective_model_id,
+                "using fallback model"
+            );
+        }
+
+        // Determine max_tokens: config override > discovered info > default
+        let max_tokens = self
+            .config
+            .session
+            .generation
+            .max_tokens
+            .unwrap_or_else(|| {
+                // Look up discovered info for this model
+                let info = self.model_info.lock().unwrap_or_else(|e| e.into_inner());
+                let key = effective_model_id.as_str();
+                info.get(&key)
+                    .and_then(|m| m.max_output_tokens)
+                    .map(|v| v as u32)
+                    .unwrap_or(4096)
+            });
+
+        // Build model config from session.yaml generation settings + discovery
         let model_config = ModelConfig {
-            max_tokens: 4096,
-            temperature: 0.7,
+            max_tokens,
+            temperature: self.config.session.generation.temperature,
             stream: true,
             tools: None,
             response_format: None,
@@ -651,7 +703,7 @@ impl SessionController for Session {
 
         // Call adapter
         let events = adapter
-            .send(&model_spec.model_id, self.messages.clone(), model_config)
+            .send(&effective_model_id, self.messages.clone(), model_config)
             .await
             .map_err(|e| SessionError::Adapter(e.to_string()))?;
 
@@ -694,7 +746,7 @@ impl SessionController for Session {
         Ok(SessionOutput {
             events: session_events,
             usage,
-            model_used: Some(model_spec.model_id),
+            model_used: Some(effective_model_id),
         })
     }
 
