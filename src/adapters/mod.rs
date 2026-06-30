@@ -7,8 +7,14 @@
 pub mod mock;
 pub mod retry;
 
+#[cfg(feature = "providers")]
+pub mod openai_compat;
+
 pub use mock::MockAdapter;
 pub use retry::{RetryError, RetryPolicy};
+
+#[cfg(feature = "providers")]
+pub use openai_compat::{OpenAiCompatAdapter, build_adapters_from_config};
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -123,20 +129,22 @@ impl AdapterFactory {
     /// MockAdapter is used for all providers when no real adapter is available
     /// (i.e., the `providers` feature is not enabled).
     pub fn from_config(config: &AppConfig) -> Self {
-        let mut adapters: HashMap<String, Box<dyn LLMAdapter>> = HashMap::new();
-
-        // MockAdapter is the fallback for all configured providers.
-        // When the `providers` feature is enabled, real adapters replace this.
-        let mock = MockAdapter::from_app_config(config);
-
-        for provider_name in config.providers.keys() {
-            adapters.insert(provider_name.clone(), Box::new(mock.clone()));
+        #[cfg(feature = "providers")]
+        {
+            let adapters = build_adapters_from_config(config);
+            Self { adapters }
         }
 
-        // Always have a "mock" provider for testing
-        adapters.insert("mock".to_string(), Box::new(mock));
-
-        Self { adapters }
+        #[cfg(not(feature = "providers"))]
+        {
+            let mut adapters: HashMap<String, Box<dyn LLMAdapter>> = HashMap::new();
+            let mock = MockAdapter::from_app_config(config);
+            for provider_name in config.providers.keys() {
+                adapters.insert(provider_name.clone(), Box::new(mock.clone()));
+            }
+            adapters.insert("mock".to_string(), Box::new(mock));
+            Self { adapters }
+        }
     }
 
     /// Get the adapter for a given model ID's provider.

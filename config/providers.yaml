@@ -13,3 +13,10 @@ providers:
       claude-sonnet: { input: 300, output: 1500 }
       claude-haiku: { input: 25, output: 125 }
       claude-opus: { input: 500, output: 2500 }
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    pricing:
+      anthropic/claude-3.5-sonnet: { input: 300, output: 1500 }
+      meta-llama/llama-3.3-70b-instruct: { input: 88, output: 120 }
+      google/gemini-2.0-flash-001: { input: 10, output: 40 }
