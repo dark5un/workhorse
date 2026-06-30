@@ -1,0 +1,12 @@
+session:
+  storage: "sqlite"
+  path: "~/.harness/sessions.db"
+  context_window:
+    strategy: "sliding_window"
+    max_tokens: 128000
+    sticky_system_prompt: true
+  system_prompt_file: "config/system_prompt.md"
+  cost_tracking:
+    enabled: true
+    warn_at_usd: 5.0
+    hard_limit_usd: 20.0

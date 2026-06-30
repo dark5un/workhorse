@@ -1,0 +1,27 @@
+analyzer:
+  heuristic:
+    enabled: true
+    tiers:
+      simple:
+        thresholds: { min_tokens: 0, max_tokens: 50 }
+        keywords: ["hello", "translate", "format"]
+        models: ["openai/gpt-4o-mini", "anthropic/claude-haiku"]
+      medium:
+        thresholds: { min_tokens: 51, max_tokens: 200 }
+        keywords: ["analyze", "summarize", "refactor"]
+        models: ["openai/gpt-4o", "anthropic/claude-sonnet"]
+      complex:
+        thresholds: { min_tokens: 201, max_tokens: 4096 }
+        keywords: ["debug", "architect", "optimize"]
+        models: ["anthropic/claude-opus", "openai/gpt-4-turbo"]
+      expert:
+        thresholds: { min_tokens: 4097, max_tokens: null }
+        keywords: ["reason", "plan", "simulate"]
+        models: ["custom/70b", "openrouter/mixtral"]
+    fallback_policy: "sequential"
+    timeout_seconds: 30
+  classifier:
+    enabled: false
+    model: "openai/gpt-4o-mini"
+    fallback_on_error: true
+    timeout_seconds: 10

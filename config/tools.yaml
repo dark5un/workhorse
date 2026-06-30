@@ -1,0 +1,14 @@
+tools:
+  mcp_servers:
+    - name: "filesystem"
+      transport: "subprocess"
+      command: "mcp-server-filesystem"
+      args: ["--allow", "/home/user/projects"]
+      sandbox: "consent"
+    - name: "shell"
+      transport: "subprocess"
+      command: "mcp-server-shell"
+      sandbox: "consent"
+  defaults:
+    sandbox: "consent"
+    session_temp_dir: "/tmp/harness-${SESSION_ID}"

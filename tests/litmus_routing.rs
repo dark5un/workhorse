@@ -1,20 +1,19 @@
 //! Litmus tests: routing & complexity analysis contracts (AGENTS.md 3.1, 3.2, 5).
 //!
-//! These tests are #[ignore] until Phase 1 (analyzer) and Phase 2 (router)
-//! are implemented. They encode the behavioral contracts that the real
-//! implementations must satisfy.
+//! Phase 1 tests (heuristic analyzer) are enabled. Phase 2 (router) and
+//! Phase 5 (classifier) tests remain ignored until those phases are implemented.
 
 use myharness::config::AppConfig;
+use myharness::core::{AnalysisError, Cost};
 use myharness::core::{
-    AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, Cost, ModelId, ModelSpec,
+    AnalysisSource, ComplexityResult, ComplexityTier, HeuristicAnalyzer, ModelId, ModelSpec,
     PromptAnalyzer, Router, RoutingError,
 };
 
 // ============================================================
-// Heuristic analyzer contracts (Phase 1)
+// Heuristic analyzer contracts (Phase 1) -- ENABLED
 // ============================================================
 
-#[ignore = "Phase 1: heuristic analyzer not yet implemented"]
 #[tokio::test]
 async fn heuristic_analyzer_classifies_simple_prompt() {
     // "hello" is a keyword for simple tier; short prompt
@@ -25,7 +24,6 @@ async fn heuristic_analyzer_classifies_simple_prompt() {
     assert_eq!(result.source, AnalysisSource::Heuristic);
 }
 
-#[ignore = "Phase 1: heuristic analyzer not yet implemented"]
 #[tokio::test]
 async fn heuristic_analyzer_classifies_complex_prompt() {
     let analyzer = create_heuristic_analyzer();
@@ -35,7 +33,6 @@ async fn heuristic_analyzer_classifies_complex_prompt() {
     assert_eq!(result.tier, ComplexityTier::Complex);
 }
 
-#[ignore = "Phase 1: heuristic analyzer not yet implemented"]
 #[tokio::test]
 async fn heuristic_analyzer_confidence_in_valid_range() {
     let analyzer = create_heuristic_analyzer();
@@ -48,14 +45,13 @@ async fn heuristic_analyzer_confidence_in_valid_range() {
         let result = analyzer.analyze(prompt).await.unwrap();
         assert!(
             result.confidence >= 0.0 && result.confidence <= 1.0,
-            "confidence {0} out of range for prompt: {1}",
+            "confidence {} out of range for prompt: {}",
             result.confidence,
             prompt
         );
     }
 }
 
-#[ignore = "Phase 1: heuristic analyzer not yet implemented"]
 #[tokio::test]
 async fn heuristic_analyzer_signals_explain_decision() {
     let analyzer = create_heuristic_analyzer();
@@ -68,10 +64,9 @@ async fn heuristic_analyzer_signals_explain_decision() {
 }
 
 // ============================================================
-// Token counting contract (Phase 1)
+// Token counting contract (Phase 1) -- ENABLED
 // ============================================================
 
-#[ignore = "Phase 1: tiktoken tokenization not yet integrated"]
 #[tokio::test]
 async fn analyzer_uses_real_token_counting() {
     // The analyzer must use tiktoken, not byte/word counting.
@@ -87,10 +82,9 @@ async fn analyzer_uses_real_token_counting() {
 }
 
 // ============================================================
-// No hardcoded config values contract (AGENTS.md 9)
+// No hardcoded config values contract (AGENTS.md 9) -- ENABLED
 // ============================================================
 
-#[ignore = "Phase 1: config-driven analyzer not yet implemented"]
 #[tokio::test]
 async fn analyzer_reads_keywords_from_config() {
     // If we change the keyword in config, the analyzer must use the new keyword.
@@ -111,7 +105,7 @@ async fn analyzer_reads_keywords_from_config() {
 }
 
 // ============================================================
-// Classifier stage contracts (Phase 5)
+// Classifier stage contracts (Phase 5) -- still ignored
 // ============================================================
 
 #[ignore = "Phase 5: classifier stage not yet implemented"]
@@ -139,7 +133,7 @@ async fn classifier_falls_back_to_heuristic_on_failure() {
 }
 
 // ============================================================
-// Router contracts (Phase 2)
+// Router contracts (Phase 2) -- still ignored
 // ============================================================
 
 #[ignore = "Phase 2: router not yet implemented"]
@@ -221,16 +215,21 @@ async fn router_budget_limit_uses_cost_type() {
 }
 
 // ============================================================
-// Mock implementations (will be replaced by real ones)
+// Real implementations (Phase 1)
 // ============================================================
 
 fn create_heuristic_analyzer() -> Box<dyn PromptAnalyzer> {
-    unimplemented!("Phase 1")
+    let config = myharness::config::load_config("config").unwrap();
+    Box::new(HeuristicAnalyzer::from_app_config(&config).unwrap())
 }
 
-fn create_analyzer_from_config(_config: AppConfig) -> Box<dyn PromptAnalyzer> {
-    unimplemented!("Phase 1")
+fn create_analyzer_from_config(config: AppConfig) -> Box<dyn PromptAnalyzer> {
+    Box::new(HeuristicAnalyzer::from_app_config(&config).unwrap())
 }
+
+// ============================================================
+// Stubs for future phases
+// ============================================================
 
 fn create_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
     unimplemented!("Phase 5")

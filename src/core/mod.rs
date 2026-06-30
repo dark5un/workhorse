@@ -8,7 +8,8 @@ pub mod router;
 pub mod session;
 
 pub use analyzer::{
-    AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, PromptAnalyzer,
+    AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, HeuristicAnalyzer,
+    PromptAnalyzer,
 };
 pub use router::{ModelId, ModelSpec, Router, RoutingError};
 pub use session::{SessionController, SessionError, SessionState};
