@@ -54,8 +54,10 @@ pub enum SandboxLevel {
     /// Ask user before destructive operations (default, like Claude Code).
     Consent,
     /// Run inside Wasm runtime (true isolation, tools must be Wasm-compatible).
+    /// Requires `wasmtime-sandbox` feature for actual implementation.
     Wasmtime,
     /// Run inside Docker/Podman container.
+    /// Requires `docker-sandbox` feature for actual implementation.
     Docker,
     /// No sandbox (trusted local tools only, explicit opt-in).
     None,
@@ -71,6 +73,21 @@ impl std::str::FromStr for SandboxLevel {
             "none" => Self::None,
             _ => Self::Consent, // default
         })
+    }
+}
+
+/// Check if a sandbox level is available (has its implementation compiled in).
+pub fn sandbox_available(level: SandboxLevel) -> bool {
+    match level {
+        SandboxLevel::Consent | SandboxLevel::None => true,
+        #[cfg(feature = "wasmtime-sandbox")]
+        SandboxLevel::Wasmtime => true,
+        #[cfg(not(feature = "wasmtime-sandbox"))]
+        SandboxLevel::Wasmtime => false,
+        #[cfg(feature = "docker-sandbox")]
+        SandboxLevel::Docker => true,
+        #[cfg(not(feature = "docker-sandbox"))]
+        SandboxLevel::Docker => false,
     }
 }
 

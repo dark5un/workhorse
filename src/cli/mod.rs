@@ -10,7 +10,13 @@ use crate::core::{Session, SessionController, SessionEvent};
 
 /// Entry point for the CLI. Runs the interactive REPL.
 pub async fn run() -> Result<()> {
-    let config = crate::config::load_config("config")?;
+    crate::observability::init();
+
+    let config = crate::config::load_config("config").map_err(|e| {
+        tracing::error!(error = %e, "config load failed");
+        anyhow::anyhow!(e)
+    })?;
+    tracing::info!(storage = %config.session.storage, "config loaded");
 
     // Expand ~ in DB path
     let db_path = expand_tilde(&config.session.path);
@@ -48,6 +54,11 @@ pub async fn run() -> Result<()> {
 
         match session.process(input).await {
             Ok(output) => {
+                tracing::info!(
+                    events = output.events.len(),
+                    has_usage = output.usage.is_some(),
+                    "turn completed"
+                );
                 for event in &output.events {
                     match event {
                         SessionEvent::Text(text) => print!("{text}"),
@@ -70,10 +81,9 @@ pub async fn run() -> Result<()> {
         }
     }
 
+    crate::observability::shutdown();
     Ok(())
 }
-
-/// Expand a leading `~` to the user's home directory.
 fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {

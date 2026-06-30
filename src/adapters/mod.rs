@@ -5,8 +5,10 @@
 //! the common `ResponseEvent` type.
 
 pub mod mock;
+pub mod retry;
 
 pub use mock::MockAdapter;
+pub use retry::{RetryError, RetryPolicy};
 
 use async_trait::async_trait;
 use thiserror::Error;
