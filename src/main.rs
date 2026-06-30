@@ -1,5 +1,4 @@
-use anyhow::Result;
-
-fn main() -> Result<()> {
-    myharness::cli::run()
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    myharness::cli::run().await
 }

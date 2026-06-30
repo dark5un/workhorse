@@ -12,7 +12,9 @@ pub use analyzer::{
     PromptAnalyzer,
 };
 pub use router::{ConfigRouter, ModelId, ModelSpec, Router, RoutingError};
-pub use session::{SessionController, SessionError, SessionState};
+pub use session::{
+    Session, SessionController, SessionError, SessionEvent, SessionOutput, SessionState,
+};
 
 use serde::{Deserialize, Serialize};
 

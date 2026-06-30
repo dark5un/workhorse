@@ -1,11 +1,84 @@
 //! CLI: REPL loop, input parsing, streaming output.
-//! Full implementation in Phase 3.
+//!
+//! Basic REPL using stdin/stdout. The `repl` feature flag enables
+//! reedline (line editor with history, syntax highlighting).
 
 use anyhow::Result;
+use std::io::{BufRead, Write};
 
-/// Entry point for the CLI. Stub -- Phase 3 implements the REPL.
-pub fn run() -> Result<()> {
-    println!("myharness: interactive LLM harness (Phase 0 scaffold)");
-    println!("REPL not yet implemented. See AGENTS.md Phase 3.");
+use crate::core::{Session, SessionController, SessionEvent};
+
+/// Entry point for the CLI. Runs the interactive REPL.
+pub async fn run() -> Result<()> {
+    let config = crate::config::load_config("config")?;
+
+    // Expand ~ in DB path
+    let db_path = expand_tilde(&config.session.path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(&db_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut session = Session::new(config, &db_path, "default")?;
+
+    println!("myharness: interactive LLM harness");
+    println!("Type /help for commands, /quit to exit.\n");
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+
+    loop {
+        write!(stdout, "> ")?;
+        stdout.flush()?;
+
+        let mut input = String::new();
+        if stdin.lock().read_line(&mut input)? == 0 {
+            break; // EOF
+        }
+
+        let input = input.trim();
+        if input.is_empty() {
+            continue;
+        }
+        if input == "/quit" {
+            println!("Goodbye.");
+            break;
+        }
+
+        match session.process(input).await {
+            Ok(output) => {
+                for event in &output.events {
+                    match event {
+                        SessionEvent::Text(text) => print!("{text}"),
+                        SessionEvent::ToolCall(inv) => {
+                            println!("\n[tool call: {} ({})]", inv.tool_name, inv.call_id);
+                        }
+                        SessionEvent::ToolResult(result) => {
+                            println!("\n[tool result: error={}]", result.is_error);
+                        }
+                        SessionEvent::Error(err) => {
+                            eprintln!("\n[error: {err}]");
+                        }
+                    }
+                }
+                println!();
+            }
+            Err(e) => {
+                eprintln!("Error: {e}");
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Expand a leading `~` to the user's home directory.
+fn expand_tilde(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    path.to_string()
 }

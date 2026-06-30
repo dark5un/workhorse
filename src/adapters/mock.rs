@@ -54,12 +54,15 @@ impl MockAdapter {
     }
 
     /// Compute cost from token usage and pricing table.
+    /// Uses ceiling to ensure any non-zero cost rounds up to at least 1 cent
+    /// (avoids 0-cost results from integer division with small token counts).
     fn compute_cost(&self, model: &str, input_tokens: u32, output_tokens: u32) -> Cost {
         match self.pricing.get(model) {
             Some((input_per_1m, output_per_1m)) => {
-                let input_cost = (input_tokens as u64 * input_per_1m) / 1_000_000;
-                let output_cost = (output_tokens as u64 * output_per_1m) / 1_000_000;
-                Cost(input_cost + output_cost)
+                let input_cost = (input_tokens as f64 * *input_per_1m as f64) / 1_000_000.0;
+                let output_cost = (output_tokens as f64 * *output_per_1m as f64) / 1_000_000.0;
+                let total = input_cost + output_cost;
+                Cost(if total > 0.0 { total.ceil() as u64 } else { 0 })
             }
             None => Cost(0),
         }

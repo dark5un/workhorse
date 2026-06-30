@@ -26,16 +26,16 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 
-# Token counting (Phase 1+)
+# Token counting
 tiktoken-rs = "0.6"
 
-# HTTP client (Phase 2+, adapters)
+# Session storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# HTTP client (Phase 6+, adapters)
 reqwest = { version = "0.12", features = ["json", "stream"], default-features = false, optional = true }
 
-# Session storage (Phase 3+)
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
-
-# CLI / REPL (Phase 3+)
+# CLI / REPL (behind feature flag)
 clap = { version = "4", features = ["derive"], optional = true }
 reedline = { version = "0.37", optional = true }
 
@@ -49,8 +49,8 @@ wasmtime-sandbox = []
 docker-sandbox = []
 # Provider HTTP support
 providers = ["dep:reqwest", "dep:backoff"]
-# Full REPL
-repl = ["dep:clap", "dep:reedline", "dep:rusqlite"]
+# Full REPL with line editor
+repl = ["dep:clap", "dep:reedline"]
 
 [dev-dependencies]
 tempfile = "3"
