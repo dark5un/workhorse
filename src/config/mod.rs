@@ -9,6 +9,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::core::ModelId;
+use crate::core::ranking::RankingConfig;
 use figment::providers::Format;
 
 /// Top-level application config, loaded from config/ directory.
@@ -124,6 +125,8 @@ pub struct SessionConfig {
     pub context_window: ContextWindowConfig,
     pub system_prompt_file: String,
     pub cost_tracking: CostTrackingConfig,
+    #[serde(default)]
+    pub ranking: RankingConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]

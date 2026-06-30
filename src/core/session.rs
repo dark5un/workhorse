@@ -10,8 +10,11 @@ use thiserror::Error;
 use crate::adapters::{AdapterFactory, ModelConfig, ResponseEvent, Usage};
 use crate::config::AppConfig;
 use crate::core::analyzer::HeuristicAnalyzer;
+use crate::core::ranking::{RankingEngine, Scope};
 use crate::core::router::ConfigRouter;
-use crate::core::{Cost, Message, MessageContent, ModelId, PromptAnalyzer, Role, Router};
+use crate::core::{
+    ComplexityTier, Cost, Message, MessageContent, ModelId, PromptAnalyzer, Role, Router,
+};
 use crate::tools::ToolResult;
 
 /// Controls the interactive session: processing input, managing state, reset.
@@ -80,7 +83,9 @@ pub struct Session {
     /// The model used in the last LLM call (for /rate command).
     last_model_used: Option<ModelId>,
     /// The complexity tier of the last prompt (for /rate command).
-    last_tier: Option<crate::core::ComplexityTier>,
+    last_tier: Option<ComplexityTier>,
+    /// Ranking engine for model effectiveness tracking.
+    ranking: RankingEngine,
 }
 
 impl Session {
@@ -133,6 +138,12 @@ impl Session {
         );
         let bpe = tiktoken_rs::cl100k_base().map_err(|e| SessionError::Storage(e.to_string()))?;
 
+        // Create ranking engine with a separate connection to the same DB
+        let ranking_conn = rusqlite::Connection::open(db_path)
+            .map_err(|e| SessionError::Storage(e.to_string()))?;
+        let ranking_config = config.session.ranking.clone();
+        let ranking = RankingEngine::new(ranking_conn, ranking_config);
+
         Ok(Self {
             config,
             messages,
@@ -147,6 +158,7 @@ impl Session {
             system_prompt,
             last_model_used: None,
             last_tier: None,
+            ranking,
         })
     }
 
@@ -276,8 +288,7 @@ impl Session {
     ) -> Result<SessionOutput, SessionError> {
         let events = match cmd {
             "help" => vec![SessionEvent::Text(
-                "Commands: /help, /tools, /model <id>, /clear, /budget <tokens>, /cost, /quit"
-                    .to_string(),
+                "Commands: /help, /tools, /model <id>, /clear, /budget <tokens>, /cost,\n  /rate [1-5], /rate <model_id> [1-5], /ratings [tier], /reset-ratings [global],\n  /ranking on|off|status, /quit".to_string(),
             )],
             "tools" => vec![SessionEvent::Text(
                 "No tools registered. (Phase 4)".to_string(),
@@ -311,6 +322,8 @@ impl Session {
                 self.messages.clear();
                 self.total_cost = Cost(0);
                 self.current_model = None;
+                self.last_model_used = None;
+                self.last_tier = None;
                 self.clear_db()?;
                 vec![SessionEvent::Text("Session cleared.".to_string())]
             }
@@ -335,6 +348,18 @@ impl Session {
                     self.config.session.cost_tracking.hard_limit_usd
                 ))]
             }
+            "rate" => {
+                self.handle_rate_command(args)?
+            }
+            "ratings" => {
+                self.handle_ratings_command(args)?
+            }
+            "reset-ratings" => {
+                self.handle_reset_ratings_command(args)?
+            }
+            "ranking" => {
+                self.handle_ranking_command(args)?
+            }
             "quit" => {
                 vec![SessionEvent::Text("Goodbye.".to_string())]
             }
@@ -348,6 +373,186 @@ impl Session {
             usage: None,
             model_used: None,
         })
+    }
+
+    /// Handle /rate command.
+    fn handle_rate_command(&self, args: &str) -> Result<Vec<SessionEvent>, SessionError> {
+        let args = args.trim();
+        if args.is_empty() {
+            return Ok(vec![SessionEvent::Error(
+                "Usage: /rate [1-5] or /rate <model_id> [1-5]".to_string(),
+            )]);
+        }
+
+        // Two forms: "/rate 5" (rate last response) or "/rate openrouter/llama-3-70b 4"
+        if let Some(rating_str) = args.strip_prefix(|c: char| c.is_ascii_digit()) {
+            // Just a number: rate the last response
+            let _ = rating_str;
+            let rating: u32 = args.parse().unwrap_or(0);
+            let model = self
+                .last_model_used
+                .as_ref()
+                .ok_or_else(|| SessionError::Storage("no last response to rate".to_string()))?;
+            let tier = self.last_tier.unwrap_or(ComplexityTier::Medium);
+
+            self.ranking
+                .record_rating(model, tier, rating, None, None, None)
+                .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+            return Ok(vec![SessionEvent::Text(format!(
+                "Rated {} for {} (tier: {:?})",
+                rating,
+                model.as_str(),
+                tier
+            ))]);
+        }
+
+        // Model ID + rating
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        if parts.len() != 2 {
+            return Ok(vec![SessionEvent::Error(
+                "Usage: /rate <model_id> [1-5]".to_string(),
+            )]);
+        }
+
+        let model = ModelId::parse(parts[0]).ok_or_else(|| {
+            SessionError::Storage(format!(
+                "Invalid model ID: '{}' (expected 'provider/model')",
+                parts[0]
+            ))
+        })?;
+        let rating: u32 = parts[1].parse().unwrap_or(0);
+        let tier = self.last_tier.unwrap_or(ComplexityTier::Medium);
+
+        self.ranking
+            .record_rating(&model, tier, rating, None, None, None)
+            .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+        Ok(vec![SessionEvent::Text(format!(
+            "Rated {} for {} (tier: {:?})",
+            rating,
+            model.as_str(),
+            tier
+        ))])
+    }
+
+    /// Handle /ratings command.
+    fn handle_ratings_command(&self, args: &str) -> Result<Vec<SessionEvent>, SessionError> {
+        let tier = if args.trim().is_empty() {
+            self.last_tier.unwrap_or(ComplexityTier::Medium)
+        } else {
+            match args.trim().to_lowercase().as_str() {
+                "simple" => ComplexityTier::Simple,
+                "medium" => ComplexityTier::Medium,
+                "complex" => ComplexityTier::Complex,
+                "expert" => ComplexityTier::Expert,
+                _ => {
+                    return Ok(vec![SessionEvent::Error(format!(
+                        "Unknown tier: '{args}'. Use: simple, medium, complex, expert"
+                    ))]);
+                }
+            }
+        };
+
+        let entries = self
+            .ranking
+            .get_rankings(tier)
+            .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+        if entries.is_empty() {
+            let scope = match self.ranking.scope() {
+                Scope::Global => "global".to_string(),
+                Scope::Project(id) => format!("project:{id}"),
+            };
+            return Ok(vec![SessionEvent::Text(format!(
+                "No ratings for tier {:?} (scope: {scope})",
+                tier
+            ))]);
+        }
+
+        let mut text = format!("Rankings for tier {:?}:\n", tier);
+        text.push_str("  Model                          Score   Samples\n");
+        text.push_str("  -----                          -----   -------\n");
+        for entry in &entries {
+            text.push_str(&format!(
+                "  {:<30} {:.2}   {}\n",
+                entry.model_id, entry.score, entry.sample_count
+            ));
+        }
+
+        let scope = match self.ranking.scope() {
+            Scope::Global => "global".to_string(),
+            Scope::Project(id) => format!("project:{id}"),
+        };
+        text.push_str(&format!("\nScope: {scope}"));
+
+        Ok(vec![SessionEvent::Text(text)])
+    }
+
+    /// Handle /reset-ratings command.
+    fn handle_reset_ratings_command(&self, args: &str) -> Result<Vec<SessionEvent>, SessionError> {
+        let scope = if args.trim() == "global" {
+            Scope::Global
+        } else {
+            self.ranking.scope().clone()
+        };
+
+        let deleted = self
+            .ranking
+            .reset_ratings(&scope)
+            .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+        Ok(vec![SessionEvent::Text(format!(
+            "Reset {deleted} ratings ({scope_label})",
+            scope_label = match &scope {
+                Scope::Global => "global scope".to_string(),
+                Scope::Project(id) => format!("project:{id}"),
+            }
+        ))])
+    }
+
+    /// Handle /ranking command.
+    fn handle_ranking_command(&self, args: &str) -> Result<Vec<SessionEvent>, SessionError> {
+        let args = args.trim();
+        match args {
+            "on" => {
+                self.ranking.set_session_enabled(true);
+                Ok(vec![SessionEvent::Text(
+                    "Ranking enabled for this session.".to_string(),
+                )])
+            }
+            "off" => {
+                self.ranking.set_session_enabled(false);
+                Ok(vec![SessionEvent::Text(
+                    "Ranking disabled for this session.".to_string(),
+                )])
+            }
+            "status" | "" => {
+                let enabled = self.ranking.is_enabled();
+                let scope = match self.ranking.scope() {
+                    Scope::Global => "global".to_string(),
+                    Scope::Project(id) => format!("project:{id}"),
+                };
+                let config_enabled = self.ranking.config().enabled;
+                let session_override = if enabled != config_enabled {
+                    format!(
+                        " (session override: {})",
+                        if enabled { "on" } else { "off" }
+                    )
+                } else {
+                    String::new()
+                };
+                Ok(vec![SessionEvent::Text(format!(
+                    "Ranking: {}{session_override}\nScope: {scope}\nMin samples: {}\nExploration: {:.0}%",
+                    if enabled { "enabled" } else { "disabled" },
+                    self.ranking.min_samples(),
+                    self.ranking.exploration_rate() * 100.0,
+                ))])
+            }
+            _ => Ok(vec![SessionEvent::Error(format!(
+                "Unknown ranking subcommand: '{args}'. Use: on, off, status"
+            ))]),
+        }
     }
 
     /// Check if the budget has been exceeded.

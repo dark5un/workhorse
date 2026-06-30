@@ -10,3 +10,10 @@ session:
     enabled: true
     warn_at_usd: 5.0
     hard_limit_usd: 20.0
+  ranking:
+    enabled: false
+    min_samples: 3
+    prior: 3.0
+    decay: 0.95
+    exploration_rate: 0.1
+    scope: "project"
