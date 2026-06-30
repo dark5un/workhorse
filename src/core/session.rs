@@ -10,8 +10,8 @@ use thiserror::Error;
 use crate::adapters::{AdapterFactory, ModelConfig, ResponseEvent, Usage};
 use crate::config::AppConfig;
 use crate::core::analyzer::HeuristicAnalyzer;
+use crate::core::learning_router::LearningRouter;
 use crate::core::ranking::{RankingEngine, Scope};
-use crate::core::router::ConfigRouter;
 use crate::core::{
     ComplexityTier, Cost, Message, MessageContent, ModelId, PromptAnalyzer, Role, Router,
 };
@@ -84,8 +84,8 @@ pub struct Session {
     last_model_used: Option<ModelId>,
     /// The complexity tier of the last prompt (for /rate command).
     last_tier: Option<ComplexityTier>,
-    /// Ranking engine for model effectiveness tracking.
-    ranking: RankingEngine,
+    /// Ranking engine for model effectiveness tracking (shared with LearningRouter).
+    ranking: std::sync::Arc<RankingEngine>,
 }
 
 impl Session {
@@ -126,23 +126,25 @@ impl Session {
         let loaded = Self::load_messages_from_db(&conn, session_id)?;
         messages.extend(loaded);
 
-        // Create adapter factory, analyzer, router
+        // Create adapter factory, analyzer
         let adapter_factory = AdapterFactory::from_config(&config);
         let analyzer: Box<dyn PromptAnalyzer> = Box::new(
             HeuristicAnalyzer::from_app_config(&config)
                 .map_err(|e| SessionError::Storage(e.to_string()))?,
         );
-        let router: Box<dyn Router> = Box::new(
-            ConfigRouter::from_app_config(&config)
-                .map_err(|e| SessionError::Storage(e.to_string()))?,
-        );
         let bpe = tiktoken_rs::cl100k_base().map_err(|e| SessionError::Storage(e.to_string()))?;
 
-        // Create ranking engine with a separate connection to the same DB
+        // Create shared ranking engine
         let ranking_conn = rusqlite::Connection::open(db_path)
             .map_err(|e| SessionError::Storage(e.to_string()))?;
         let ranking_config = config.session.ranking.clone();
-        let ranking = RankingEngine::new(ranking_conn, ranking_config);
+        let ranking = std::sync::Arc::new(RankingEngine::new(ranking_conn, ranking_config));
+
+        // Create learning router (wraps ConfigRouter with ranking-based reordering)
+        let router: Box<dyn Router> = Box::new(
+            LearningRouter::from_app_config(&config, ranking.clone())
+                .map_err(|e| SessionError::Storage(e.to_string()))?,
+        );
 
         Ok(Self {
             config,

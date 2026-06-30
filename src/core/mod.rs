@@ -4,6 +4,7 @@
 //! Trait definitions live here; concrete implementations live in child modules.
 
 pub mod analyzer;
+pub mod learning_router;
 pub mod ranking;
 pub mod router;
 pub mod session;
@@ -12,6 +13,7 @@ pub use analyzer::{
     AnalysisError, AnalysisSource, ClassificationResponse, ClassifierAnalyzer, ClassifierModel,
     ComplexityResult, ComplexityTier, HeuristicAnalyzer, PromptAnalyzer,
 };
+pub use learning_router::LearningRouter;
 pub use ranking::{RankingConfig, RankingEngine, RankingEntry, RankingError, Scope};
 pub use router::{ConfigRouter, ModelId, ModelSpec, Router, RoutingError};
 pub use session::{
