@@ -6,7 +6,7 @@ use myharness::adapters::{
     LLMAdapter, LLMError, MockAdapter, ModelCapabilities, ModelConfig, ResponseEvent,
     ToolInvocation, Usage,
 };
-use myharness::core::{Cost, Message, MessageContent, Role};
+use myharness::core::{Cost, Message, MessageContent, ModelId, Role};
 use std::collections::HashMap;
 
 // ============================================================
@@ -29,7 +29,7 @@ async fn mock_adapter_streams_response_events() {
         tools: None,
         response_format: None,
     };
-    let events = adapter.send(messages, config).await.unwrap();
+    let events = adapter.send(&test_model(), messages, config).await.unwrap();
 
     // Must produce at least one Chunk and end with Done
     assert!(!events.is_empty());
@@ -53,7 +53,7 @@ async fn adapter_normalizes_tool_calls() {
         tools: None,
         response_format: None,
     };
-    let events = adapter.send(messages, config).await.unwrap();
+    let events = adapter.send(&test_model(), messages, config).await.unwrap();
 
     // If the adapter returns a tool call, it must be a normalized ToolInvocation
     let tool_calls: Vec<&ToolInvocation> = events
@@ -80,7 +80,7 @@ async fn adapter_usage_includes_cost_from_pricing_table() {
         },
     }];
     let config = default_model_config();
-    let events = adapter.send(messages, config).await.unwrap();
+    let events = adapter.send(&test_model(), messages, config).await.unwrap();
 
     let done = events.iter().find_map(|e| match e {
         ResponseEvent::Done(usage) => Some(usage),
@@ -130,6 +130,10 @@ fn harness_does_not_import_provider_sdks() {
 fn create_mock_adapter() -> Box<dyn LLMAdapter> {
     let config = myharness::config::load_config("config").unwrap();
     Box::new(MockAdapter::from_app_config(&config))
+}
+
+fn test_model() -> ModelId {
+    ModelId::parse("mock/test-model").unwrap()
 }
 
 fn default_model_config() -> ModelConfig {

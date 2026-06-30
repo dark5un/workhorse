@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::sync::Mutex;
 use thiserror::Error;
 
-use crate::adapters::{LLMAdapter, MockAdapter, ModelConfig, ResponseEvent, Usage};
+use crate::adapters::{AdapterFactory, ModelConfig, ResponseEvent, Usage};
 use crate::config::AppConfig;
 use crate::core::analyzer::HeuristicAnalyzer;
 use crate::core::router::ConfigRouter;
@@ -27,6 +27,8 @@ pub trait SessionController: Send + Sync {
 pub struct SessionOutput {
     pub events: Vec<SessionEvent>,
     pub usage: Option<Usage>,
+    /// Which model was used for this turn (None for slash commands).
+    pub model_used: Option<ModelId>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +69,7 @@ pub struct Session {
     config: AppConfig,
     messages: Vec<Message>,
     conn: Mutex<rusqlite::Connection>,
-    adapter: Box<dyn LLMAdapter>,
+    adapter_factory: AdapterFactory,
     analyzer: Box<dyn PromptAnalyzer>,
     router: Box<dyn Router>,
     bpe: tiktoken_rs::CoreBPE,
@@ -75,6 +77,10 @@ pub struct Session {
     total_cost: Cost,
     session_id: String,
     system_prompt: String,
+    /// The model used in the last LLM call (for /rate command).
+    last_model_used: Option<ModelId>,
+    /// The complexity tier of the last prompt (for /rate command).
+    last_tier: Option<crate::core::ComplexityTier>,
 }
 
 impl Session {
@@ -115,8 +121,8 @@ impl Session {
         let loaded = Self::load_messages_from_db(&conn, session_id)?;
         messages.extend(loaded);
 
-        // Create adapter, analyzer, router
-        let adapter: Box<dyn LLMAdapter> = Box::new(MockAdapter::from_app_config(&config));
+        // Create adapter factory, analyzer, router
+        let adapter_factory = AdapterFactory::from_config(&config);
         let analyzer: Box<dyn PromptAnalyzer> = Box::new(
             HeuristicAnalyzer::from_app_config(&config)
                 .map_err(|e| SessionError::Storage(e.to_string()))?,
@@ -131,7 +137,7 @@ impl Session {
             config,
             messages,
             conn: Mutex::new(conn),
-            adapter,
+            adapter_factory,
             analyzer,
             router,
             bpe,
@@ -139,6 +145,8 @@ impl Session {
             total_cost: Cost(0),
             session_id: session_id.to_string(),
             system_prompt,
+            last_model_used: None,
+            last_tier: None,
         })
     }
 
@@ -338,6 +346,7 @@ impl Session {
         Ok(SessionOutput {
             events,
             usage: None,
+            model_used: None,
         })
     }
 
@@ -392,10 +401,20 @@ impl SessionController for Session {
             .map_err(|e| SessionError::Adapter(e.to_string()))?;
 
         // Route to model
-        let _model_spec = self
+        let model_spec = self
             .router
             .route(&complexity, self.current_model.as_ref())
             .await
+            .map_err(|e| SessionError::Adapter(e.to_string()))?;
+
+        // Track for /rate command
+        self.last_model_used = Some(model_spec.model_id.clone());
+        self.last_tier = Some(complexity.tier);
+
+        // Get adapter for the selected model's provider
+        let adapter = self
+            .adapter_factory
+            .get_adapter(&model_spec.model_id)
             .map_err(|e| SessionError::Adapter(e.to_string()))?;
 
         // Build model config
@@ -408,9 +427,8 @@ impl SessionController for Session {
         };
 
         // Call adapter
-        let events = self
-            .adapter
-            .send(self.messages.clone(), model_config)
+        let events = adapter
+            .send(&model_spec.model_id, self.messages.clone(), model_config)
             .await
             .map_err(|e| SessionError::Adapter(e.to_string()))?;
 
@@ -453,6 +471,7 @@ impl SessionController for Session {
         Ok(SessionOutput {
             events: session_events,
             usage,
+            model_used: Some(model_spec.model_id),
         })
     }
 

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::adapters::{
     LLMAdapter, LLMError, ModelCapabilities, ModelConfig, ResponseEvent, ToolInvocation, Usage,
 };
-use crate::core::{Cost, Message, MessageContent, Role};
+use crate::core::{Cost, Message, MessageContent, ModelId, Role};
 
 /// Mock adapter that produces deterministic responses.
 ///
@@ -24,6 +24,16 @@ pub struct MockAdapter {
     capabilities: ModelCapabilities,
     /// Counter for generating unique call IDs
     call_counter: AtomicU32,
+}
+
+impl Clone for MockAdapter {
+    fn clone(&self) -> Self {
+        Self {
+            pricing: self.pricing.clone(),
+            capabilities: self.capabilities.clone(),
+            call_counter: AtomicU32::new(self.call_counter.load(Ordering::SeqCst)),
+        }
+    }
 }
 
 impl MockAdapter {
@@ -104,6 +114,7 @@ impl MockAdapter {
 impl LLMAdapter for MockAdapter {
     async fn send(
         &self,
+        _model: &ModelId,
         messages: Vec<Message>,
         _config: ModelConfig,
     ) -> Result<Vec<ResponseEvent>, LLMError> {

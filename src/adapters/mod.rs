@@ -11,9 +11,11 @@ pub use mock::MockAdapter;
 pub use retry::{RetryError, RetryPolicy};
 
 use async_trait::async_trait;
+use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::core::{Cost, Message};
+use crate::config::AppConfig;
+use crate::core::{Cost, Message, ModelId};
 
 /// Abstract LLM adapter. Providers implement this trait.
 ///
@@ -21,9 +23,11 @@ use crate::core::{Cost, Message};
 /// via interior mutability (Arc<Mutex<...>>).
 #[async_trait]
 pub trait LLMAdapter: Send + Sync {
-    /// Send a completion request, returning a stream of response events.
+    /// Send a completion request, returning response events.
+    /// The `model` field in ModelConfig specifies which model to call.
     async fn send(
         &self,
+        model: &ModelId,
         messages: Vec<Message>,
         config: ModelConfig,
     ) -> Result<Vec<ResponseEvent>, LLMError>;
@@ -102,4 +106,44 @@ pub enum LLMError {
     Parse(String),
     #[error("budget exceeded")]
     BudgetExceeded,
+    #[error("provider '{0}' not configured")]
+    ProviderNotConfigured(String),
+}
+
+/// Factory that maps provider names to adapter instances.
+///
+/// Built from AppConfig. Each provider config has base_url and api_key_env.
+/// The factory returns the appropriate adapter for a given ModelId.
+pub struct AdapterFactory {
+    adapters: HashMap<String, Box<dyn LLMAdapter>>,
+}
+
+impl AdapterFactory {
+    /// Build an adapter factory from app config.
+    /// MockAdapter is used for all providers when no real adapter is available
+    /// (i.e., the `providers` feature is not enabled).
+    pub fn from_config(config: &AppConfig) -> Self {
+        let mut adapters: HashMap<String, Box<dyn LLMAdapter>> = HashMap::new();
+
+        // MockAdapter is the fallback for all configured providers.
+        // When the `providers` feature is enabled, real adapters replace this.
+        let mock = MockAdapter::from_app_config(config);
+
+        for provider_name in config.providers.keys() {
+            adapters.insert(provider_name.clone(), Box::new(mock.clone()));
+        }
+
+        // Always have a "mock" provider for testing
+        adapters.insert("mock".to_string(), Box::new(mock));
+
+        Self { adapters }
+    }
+
+    /// Get the adapter for a given model ID's provider.
+    pub fn get_adapter(&self, model: &ModelId) -> Result<&dyn LLMAdapter, LLMError> {
+        self.adapters
+            .get(&model.provider)
+            .map(|a| a.as_ref())
+            .ok_or_else(|| LLMError::ProviderNotConfigured(model.provider.clone()))
+    }
 }

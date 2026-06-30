@@ -74,6 +74,21 @@ pub async fn run() -> Result<()> {
                     }
                 }
                 println!();
+
+                // Show which model was used, after the response
+                if let Some(model) = &output.model_used {
+                    let cost_str = output
+                        .usage
+                        .as_ref()
+                        .map(|u| format!(" | cost: ${:.2}", u.cost.as_usd()))
+                        .unwrap_or_default();
+                    let token_str = output
+                        .usage
+                        .as_ref()
+                        .map(|u| format!(" | tokens: {}/{}", u.input_tokens, u.output_tokens))
+                        .unwrap_or_default();
+                    println!("[model: {}{token_str}{cost_str}]", model.as_str());
+                }
             }
             Err(e) => {
                 eprintln!("Error: {e}");
