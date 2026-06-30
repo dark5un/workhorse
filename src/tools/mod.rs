@@ -4,6 +4,14 @@
 //! subprocesses or remote). The internal `Tool` trait is a thin adapter
 //! over the MCP protocol.
 
+pub mod consent;
+pub mod mcp_client;
+pub mod mcp_tool;
+
+pub use consent::{AutoApprove, AutoDeny, ConsentCallback, ConsentDecision, ConsentSandbox};
+pub use mcp_client::{McpClient, McpError, McpToolDef};
+pub use mcp_tool::McpTool;
+
 use async_trait::async_trait;
 use thiserror::Error;
 
@@ -53,6 +61,19 @@ pub enum SandboxLevel {
     None,
 }
 
+impl std::str::FromStr for SandboxLevel {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "wasmtime" => Self::Wasmtime,
+            "docker" => Self::Docker,
+            "none" => Self::None,
+            _ => Self::Consent, // default
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("tool not found: {0}")]
@@ -69,15 +90,21 @@ pub enum ToolError {
     InvalidArgs(String),
 }
 
-/// Tool registry: registers MCP servers, validates tool schemas, manages lifecycle.
+/// Tool registry: registers tools, validates schemas, manages lifecycle.
 /// Wraps each tool in a RAII guard that ensures cleanup on drop.
 pub struct ToolRegistry {
     tools: Vec<Box<dyn Tool>>,
+    /// Per-session temp directory for tool isolation.
+    session_temp_dir: std::path::PathBuf,
 }
 
 impl ToolRegistry {
-    pub fn new() -> Self {
-        Self { tools: Vec::new() }
+    pub fn new(session_temp_dir: &std::path::Path) -> Self {
+        let _ = std::fs::create_dir_all(session_temp_dir);
+        Self {
+            tools: Vec::new(),
+            session_temp_dir: session_temp_dir.to_path_buf(),
+        }
     }
 
     pub fn register(&mut self, tool: Box<dyn Tool>) {
@@ -94,10 +121,23 @@ impl ToolRegistry {
     pub fn list(&self) -> Vec<&dyn Tool> {
         self.tools.iter().map(|t| t.as_ref()).collect()
     }
+
+    /// Get the per-session temp directory.
+    pub fn session_temp_dir(&self) -> &std::path::Path {
+        &self.session_temp_dir
+    }
+
+    /// Clean up all registered tools (graceful shutdown).
+    pub async fn cleanup_all(&self) -> Result<(), ToolError> {
+        for tool in &self.tools {
+            let _ = tool.cleanup().await;
+        }
+        Ok(())
+    }
 }
 
 impl Default for ToolRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::path::Path::new("/tmp/harness-default"))
     }
 }
