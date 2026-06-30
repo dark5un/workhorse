@@ -3,9 +3,9 @@
 //! Tests for: config env var overrides, tracing JSON output,
 //! retry/backoff infrastructure, sandbox availability checks.
 
-use myharness::adapters::RetryPolicy;
-use myharness::config::load_config;
-use myharness::tools::{SandboxLevel, sandbox_available};
+use workhorse::adapters::RetryPolicy;
+use workhorse::config::load_config;
+use workhorse::tools::{SandboxLevel, sandbox_available};
 use std::time::Duration;
 
 // ============================================================

@@ -115,7 +115,7 @@ impl McpClient {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
                     "clientInfo": {
-                        "name": "myharness",
+                        "name": "workhorse",
                         "version": "0.1.0"
                     }
                 }),

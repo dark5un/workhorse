@@ -13,7 +13,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 /// - `otel` feature: exports spans/traces via OpenTelemetry.
 pub fn init() {
     let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("myharness=info,warn"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("workhorse=info,warn"));
 
     let use_json = std::env::var("HARNESS_LOG_JSON").is_ok();
 
@@ -22,7 +22,7 @@ pub fn init() {
         use opentelemetry_sdk::trace::TracerProvider;
         let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
             .build()
-            .tracer("myharness");
+            .tracer("workhorse");
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
         if use_json {

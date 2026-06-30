@@ -4,13 +4,13 @@
 //! hold across all future refactoring. They test TYPES and TRAITS, not
 //! specific implementations.
 
-use myharness::adapters::{LLMAdapter, LLMError, ResponseEvent, ToolInvocation, Usage};
-use myharness::config::AppConfig;
-use myharness::core::{
+use workhorse::adapters::{LLMAdapter, LLMError, ResponseEvent, ToolInvocation, Usage};
+use workhorse::config::AppConfig;
+use workhorse::core::{
     AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, Cost, ModelId, PromptAnalyzer,
     Router, RoutingError, SessionController, SessionError,
 };
-use myharness::tools::{SandboxLevel, Tool, ToolContent, ToolError, ToolResult};
+use workhorse::tools::{SandboxLevel, Tool, ToolContent, ToolError, ToolResult};
 
 // ============================================================
 // ModelId contracts (AGENTS.md 3.2, 9)
@@ -103,7 +103,7 @@ fn all_error_types_implement_std_error() {
     _assert_error::<RoutingError>();
     _assert_error::<LLMError>();
     _assert_error::<ToolError>();
-    _assert_error::<myharness::config::ConfigError>();
+    _assert_error::<workhorse::config::ConfigError>();
     _assert_error::<SessionError>();
 }
 
@@ -324,7 +324,7 @@ fn complexity_result_carries_source_and_signals() {
         confidence: 0.85,
         signals: vec!["keyword:debug".to_string(), "length:250".to_string()],
         source: AnalysisSource::Heuristic,
-        task_type: myharness::core::TaskType::General,
+        task_type: workhorse::core::TaskType::General,
     };
     assert_eq!(result.tier, ComplexityTier::Complex);
     assert!((result.confidence - 0.85).abs() < 0.001);

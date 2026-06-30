@@ -1,4 +1,4 @@
-//! myharness -- Rust-based interactive CLI harness for LLM routing,
+//! workhorse -- Rust-based interactive CLI harness for LLM routing,
 //! MCP tool execution, and persistent sessions.
 //!
 //! Module layout (single crate, not a workspace):

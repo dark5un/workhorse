@@ -1,5 +1,5 @@
 [package]
-name = "myharness"
+name = "workhorse"
 version = "0.1.0"
 edition = "2024"
 description = "Rust-based interactive CLI harness for LLM routing, MCP tool execution, and persistent sessions"
@@ -63,9 +63,9 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry
 tempfile = "3"
 
 [[bin]]
-name = "myharness"
+name = "workhorse"
 path = "src/main.rs"
 
 [lib]
-name = "myharness"
+name = "workhorse"
 path = "src/lib.rs"

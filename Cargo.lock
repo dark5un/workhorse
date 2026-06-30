@@ -907,33 +907,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "myharness"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "backoff",
- "clap",
- "figment",
- "futures",
- "opentelemetry",
- "opentelemetry_sdk",
- "reedline",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 2.0.18",
- "tiktoken-rs",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2188,6 +2161,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "workhorse"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "backoff",
+ "clap",
+ "figment",
+ "futures",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "reedline",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tiktoken-rs",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 //!
 //! Phase B tests: rating recording, Bayesian scoring, scope, slash commands.
 
-use myharness::core::{ComplexityTier, ModelId, RankingConfig, RankingEngine, Scope, TaskType};
+use workhorse::core::{ComplexityTier, ModelId, RankingConfig, RankingEngine, Scope, TaskType};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -13,7 +13,7 @@ fn create_ranking_engine() -> RankingEngine {
 
 fn create_ranking_engine_with_config(config: RankingConfig) -> RankingEngine {
     let id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("myharness-ranking-test-{id}.db"));
+    let path = std::env::temp_dir().join(format!("workhorse-ranking-test-{id}.db"));
     let _ = std::fs::remove_file(&path);
     let conn = rusqlite::Connection::open(path).unwrap();
     RankingEngine::new(conn, config)
@@ -362,12 +362,12 @@ scope: "global"
 
 #[tokio::test]
 async fn session_rate_command_rates_last_response() {
-    use myharness::core::{Session, SessionController};
+    use workhorse::core::{Session, SessionController};
 
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir()
-        .join(format!("myharness-ranking-session-{id}.db"))
+        .join(format!("workhorse-ranking-session-{id}.db"))
         .to_str()
         .unwrap()
         .to_string();
@@ -385,12 +385,12 @@ async fn session_rate_command_rates_last_response() {
 
 #[tokio::test]
 async fn session_ranking_status_command() {
-    use myharness::core::{Session, SessionController};
+    use workhorse::core::{Session, SessionController};
 
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir()
-        .join(format!("myharness-ranking-status-{id}.db"))
+        .join(format!("workhorse-ranking-status-{id}.db"))
         .to_str()
         .unwrap()
         .to_string();
@@ -408,7 +408,7 @@ async fn session_ranking_status_command() {
     // Check status again
     let result = session.process("/ranking status").await.unwrap();
     let text = match &result.events[0] {
-        myharness::core::SessionEvent::Text(t) => t.clone(),
+        workhorse::core::SessionEvent::Text(t) => t.clone(),
         _ => panic!("expected text event"),
     };
     assert!(
@@ -419,12 +419,12 @@ async fn session_ranking_status_command() {
 
 #[tokio::test]
 async fn session_ratings_command_shows_table() {
-    use myharness::core::{Session, SessionController};
+    use workhorse::core::{Session, SessionController};
 
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir()
-        .join(format!("myharness-ratings-table-{id}.db"))
+        .join(format!("workhorse-ratings-table-{id}.db"))
         .to_str()
         .unwrap()
         .to_string();
@@ -435,7 +435,7 @@ async fn session_ratings_command_shows_table() {
     // No ratings yet
     let result = session.process("/ratings").await.unwrap();
     let text = match &result.events[0] {
-        myharness::core::SessionEvent::Text(t) => t.clone(),
+        workhorse::core::SessionEvent::Text(t) => t.clone(),
         _ => panic!("expected text event"),
     };
     assert!(
@@ -446,12 +446,12 @@ async fn session_ratings_command_shows_table() {
 
 #[tokio::test]
 async fn session_reset_ratings_command() {
-    use myharness::core::{Session, SessionController};
+    use workhorse::core::{Session, SessionController};
 
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir()
-        .join(format!("myharness-reset-ratings-{id}.db"))
+        .join(format!("workhorse-reset-ratings-{id}.db"))
         .to_str()
         .unwrap()
         .to_string();
@@ -466,7 +466,7 @@ async fn session_reset_ratings_command() {
     // Reset ratings
     let result = session.process("/reset-ratings").await.unwrap();
     let text = match &result.events[0] {
-        myharness::core::SessionEvent::Text(t) => t.clone(),
+        workhorse::core::SessionEvent::Text(t) => t.clone(),
         _ => panic!("expected text event"),
     };
     assert!(text.contains("Reset"), "should show reset message");

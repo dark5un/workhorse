@@ -3,7 +3,7 @@
 //! Phase 3 tests are enabled: session persistence, context window,
 //! cost tracking, slash commands.
 
-use myharness::core::{Session, SessionController, SessionError, SessionState};
+use workhorse::core::{Session, SessionController, SessionError, SessionState};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // Unique DB path per create_session() call, stored thread-locally for
@@ -162,14 +162,14 @@ async fn slash_cost_shows_session_spend() {
 // Real implementations
 // ============================================================
 
-fn load_test_config() -> myharness::config::AppConfig {
-    myharness::config::load_config("config").unwrap()
+fn load_test_config() -> workhorse::config::AppConfig {
+    workhorse::config::load_config("config").unwrap()
 }
 
 fn create_session() -> Box<dyn SessionController> {
     let config = load_test_config();
     let id = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("myharness-test-{id}.db"));
+    let path = std::env::temp_dir().join(format!("workhorse-test-{id}.db"));
     let _ = std::fs::remove_file(&path);
     let path_str = path.to_str().unwrap().to_string();
     TEST_DB_PATH.with(|p| *p.borrow_mut() = Some(path_str.clone()));
@@ -188,7 +188,7 @@ fn create_session_with_low_budget() -> Box<dyn SessionController> {
     let mut config = load_test_config();
     config.session.cost_tracking.hard_limit_usd = 0.01; // 1 cent
     let id = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("myharness-test-{id}.db"));
+    let path = std::env::temp_dir().join(format!("workhorse-test-{id}.db"));
     let _ = std::fs::remove_file(&path);
     let path_str = path.to_str().unwrap().to_string();
     Box::new(Session::new(config, &path_str, "test").unwrap())

@@ -3,7 +3,7 @@
 //! Phase 4 tests (MCP client, consent sandbox, tool lifecycle) are enabled.
 
 use async_trait::async_trait;
-use myharness::tools::{
+use workhorse::tools::{
     ConsentSandbox, McpClient, McpTool, Tool, ToolContent, ToolError, ToolRegistry, ToolResult,
 };
 use std::path::PathBuf;
@@ -135,7 +135,7 @@ async fn consent_sandbox_prompts_for_destructive_ops() {
 
 #[tokio::test]
 async fn consent_sandbox_denies_when_callback_denies() {
-    let consent = Arc::new(ConsentSandbox::new(Box::new(myharness::tools::AutoDeny)));
+    let consent = Arc::new(ConsentSandbox::new(Box::new(workhorse::tools::AutoDeny)));
 
     let working_dir = unique_temp_dir("deny");
     let client = Arc::new(
@@ -236,15 +236,15 @@ struct TrackingConsent {
     count: AtomicU32,
 }
 
-impl myharness::tools::ConsentCallback for TrackingConsent {
+impl workhorse::tools::ConsentCallback for TrackingConsent {
     fn request_consent(
         &self,
         _tool_name: &str,
         _operation: &str,
         _args: &serde_json::Value,
-    ) -> myharness::tools::ConsentDecision {
+    ) -> workhorse::tools::ConsentDecision {
         self.count.fetch_add(1, Ordering::SeqCst);
-        myharness::tools::ConsentDecision::Allow
+        workhorse::tools::ConsentDecision::Allow
     }
 }
 

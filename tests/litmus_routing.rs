@@ -3,8 +3,8 @@
 //! Phase 1 (heuristic analyzer) and Phase 2 (router) tests are enabled.
 //! Phase 5 (classifier) tests remain ignored.
 
-use myharness::config::AppConfig;
-use myharness::core::{
+use workhorse::config::AppConfig;
+use workhorse::core::{
     AnalysisError, AnalysisSource, ComplexityResult, ComplexityTier, ConfigRouter, Cost,
     HeuristicAnalyzer, ModelId, ModelSpec, PromptAnalyzer, Router, RoutingError,
 };
@@ -113,7 +113,7 @@ async fn router_selects_model_for_each_tier() {
             confidence: 0.9,
             signals: vec![],
             source: AnalysisSource::Heuristic,
-            task_type: myharness::core::TaskType::General,
+            task_type: workhorse::core::TaskType::General,
         };
         let spec = router.route(&complexity, None).await.unwrap();
         assert!(
@@ -132,7 +132,7 @@ async fn router_user_override_bypasses_routing() {
         confidence: 0.99,
         signals: vec![],
         source: AnalysisSource::Heuristic,
-        task_type: myharness::core::TaskType::General,
+        task_type: workhorse::core::TaskType::General,
     };
     let override_model = ModelId::parse("anthropic/claude-opus").unwrap();
     let spec = router
@@ -150,7 +150,7 @@ async fn router_model_spec_uses_model_id_not_bare_string() {
         confidence: 0.8,
         signals: vec![],
         source: AnalysisSource::Heuristic,
-        task_type: myharness::core::TaskType::General,
+        task_type: workhorse::core::TaskType::General,
     };
     let spec = router.route(&complexity, None).await.unwrap();
     assert!(!spec.model_id.provider.is_empty());
@@ -165,7 +165,7 @@ async fn router_budget_limit_uses_cost_type() {
         confidence: 0.85,
         signals: vec![],
         source: AnalysisSource::Heuristic,
-        task_type: myharness::core::TaskType::General,
+        task_type: workhorse::core::TaskType::General,
     };
     let spec = router.route(&complexity, None).await.unwrap();
     if let Some(budget) = spec.budget_limit {
@@ -202,7 +202,7 @@ async fn classifier_falls_back_to_heuristic_on_failure() {
 // ============================================================
 
 fn create_heuristic_analyzer() -> Box<dyn PromptAnalyzer> {
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     Box::new(HeuristicAnalyzer::from_app_config(&config).unwrap())
 }
 
@@ -211,7 +211,7 @@ fn create_analyzer_from_config(config: AppConfig) -> Box<dyn PromptAnalyzer> {
 }
 
 fn create_router() -> Box<dyn Router> {
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     Box::new(ConfigRouter::from_app_config(&config).unwrap())
 }
 
@@ -220,10 +220,10 @@ fn create_router() -> Box<dyn Router> {
 // ============================================================
 
 use async_trait::async_trait;
-use myharness::core::{ClassificationResponse, ClassifierAnalyzer, ClassifierModel};
+use workhorse::core::{ClassificationResponse, ClassifierAnalyzer, ClassifierModel};
 
 fn create_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let heuristic = HeuristicAnalyzer::from_app_config(&config).unwrap();
     Box::new(ClassifierAnalyzer::new(
         heuristic,
@@ -234,7 +234,7 @@ fn create_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
 }
 
 fn create_failing_classifier_analyzer() -> Box<dyn PromptAnalyzer> {
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     let heuristic = HeuristicAnalyzer::from_app_config(&config).unwrap();
     Box::new(ClassifierAnalyzer::new(
         heuristic,

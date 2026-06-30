@@ -2,11 +2,11 @@
 //!
 //! Phase 2 tests (mock adapter) are enabled.
 
-use myharness::adapters::{
+use workhorse::adapters::{
     LLMAdapter, LLMError, MockAdapter, ModelCapabilities, ModelConfig, ResponseEvent,
     ToolInvocation, Usage,
 };
-use myharness::core::{Cost, Message, MessageContent, ModelId, Role};
+use workhorse::core::{Cost, Message, MessageContent, ModelId, Role};
 use std::collections::HashMap;
 
 // ============================================================
@@ -128,7 +128,7 @@ fn harness_does_not_import_provider_sdks() {
 // ============================================================
 
 fn create_mock_adapter() -> Box<dyn LLMAdapter> {
-    let config = myharness::config::load_config("config").unwrap();
+    let config = workhorse::config::load_config("config").unwrap();
     Box::new(MockAdapter::from_app_config(&config))
 }
 

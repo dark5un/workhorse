@@ -28,7 +28,7 @@ pub async fn run() -> Result<()> {
 
     let mut session = Session::new(config, &db_path, "default")?;
 
-    println!("myharness: interactive LLM harness");
+    println!("workhorse: interactive LLM harness");
     println!("Type /help for commands, /quit to exit.\n");
 
     let stdin = std::io::stdin();
