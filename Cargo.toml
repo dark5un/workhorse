@@ -1,0 +1,64 @@
+[package]
+name = "myharness"
+version = "0.1.0"
+edition = "2024"
+description = "Rust-based interactive CLI harness for LLM routing, MCP tool execution, and persistent sessions"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Config layering
+figment = { version = "0.10", features = ["yaml", "env", "toml"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging / observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Token counting (Phase 1+)
+tiktoken-rs = "0.6"
+
+# HTTP client (Phase 2+, adapters)
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false, optional = true }
+
+# Session storage (Phase 3+)
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+# CLI / REPL (Phase 3+)
+clap = { version = "4", features = ["derive"], optional = true }
+reedline = { version = "0.37", optional = true }
+
+# Retry / backoff (Phase 6+)
+backoff = { version = "0.4", optional = true }
+
+[features]
+default = []
+# Feature flags for optional sandbox backends
+wasmtime-sandbox = []
+docker-sandbox = []
+# Provider HTTP support
+providers = ["dep:reqwest", "dep:backoff"]
+# Full REPL
+repl = ["dep:clap", "dep:reedline", "dep:rusqlite"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "myharness"
+path = "src/main.rs"
+
+[lib]
+name = "myharness"
+path = "src/lib.rs"

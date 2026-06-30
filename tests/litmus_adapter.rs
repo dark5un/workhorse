@@ -1,0 +1,169 @@
+//! Litmus tests: LLM adapter contracts (AGENTS.md 3.3).
+//!
+//! These tests are #[ignore] until Phase 2 (adapter interface + mock provider)
+//! is implemented. They encode the streaming and tool-call normalization
+//! contracts.
+
+use myharness::adapters::{
+    LLMAdapter, LLMError, ModelCapabilities, ModelConfig, ResponseEvent, ToolInvocation, Usage,
+};
+use myharness::core::{Cost, Message, MessageContent, Role};
+
+// ============================================================
+// Adapter streaming contract (Phase 2)
+// ============================================================
+
+#[ignore = "Phase 2: mock adapter not yet implemented"]
+#[tokio::test]
+async fn mock_adapter_streams_response_events() {
+    let adapter = create_mock_adapter();
+    let messages = vec![Message {
+        role: Role::User,
+        content: MessageContent::Text {
+            text: "hello".to_string(),
+        },
+    }];
+    let config = ModelConfig {
+        max_tokens: 100,
+        temperature: 0.7,
+        stream: true,
+        tools: None,
+        response_format: None,
+    };
+    let events = adapter.send(messages, config).await.unwrap();
+
+    // Must produce at least one Chunk and end with Done
+    assert!(!events.is_empty());
+    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Chunk(_))));
+    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Done(_))));
+}
+
+#[ignore = "Phase 2: mock adapter not yet implemented"]
+#[tokio::test]
+async fn adapter_normalizes_tool_calls() {
+    let adapter = create_mock_adapter();
+    let messages = vec![Message {
+        role: Role::User,
+        content: MessageContent::Text {
+            text: "read the file".to_string(),
+        },
+    }];
+    let config = ModelConfig {
+        max_tokens: 100,
+        temperature: 0.0,
+        stream: false,
+        tools: None,
+        response_format: None,
+    };
+    let events = adapter.send(messages, config).await.unwrap();
+
+    // If the adapter returns a tool call, it must be a normalized ToolInvocation
+    let tool_calls: Vec<&ToolInvocation> = events
+        .iter()
+        .filter_map(|e| match e {
+            ResponseEvent::ToolCall(inv) => Some(inv),
+            _ => None,
+        })
+        .collect();
+
+    for tc in &tool_calls {
+        assert!(!tc.call_id.is_empty(), "tool call must have a call_id");
+        assert!(!tc.tool_name.is_empty(), "tool call must have a tool_name");
+    }
+}
+
+#[ignore = "Phase 2: mock adapter not yet implemented"]
+#[tokio::test]
+async fn adapter_usage_includes_cost_from_pricing_table() {
+    let adapter = create_mock_adapter();
+    let messages = vec![Message {
+        role: Role::User,
+        content: MessageContent::Text {
+            text: "hello".to_string(),
+        },
+    }];
+    let config = default_model_config();
+    let events = adapter.send(messages, config).await.unwrap();
+
+    let done = events.iter().find_map(|e| match e {
+        ResponseEvent::Done(usage) => Some(usage),
+        _ => None,
+    });
+    let usage = done.expect("adapter must emit Done event with Usage");
+    assert!(usage.input_tokens > 0 || usage.output_tokens > 0);
+    // Cost must be computed from pricing table, not zero (unless model is free)
+    // Cost is in USD cents (u64 newtype)
+    let _cents: u64 = usage.cost.0;
+}
+
+#[ignore = "Phase 2: mock adapter not yet implemented"]
+#[tokio::test]
+async fn adapter_capabilities_describe_model_features() {
+    let adapter = create_mock_adapter();
+    let caps = adapter.capabilities();
+    // Capabilities must report what the model supports
+    let _streaming = caps.streaming;
+    let _tool_calling = caps.tool_calling;
+    let _structured_output = caps.structured_output;
+    let _vision = caps.vision;
+    assert!(
+        caps.max_context_tokens > 0,
+        "max_context_tokens must be positive"
+    );
+}
+
+// ============================================================
+// No provider coupling contract (AGENTS.md 9)
+// ============================================================
+
+#[ignore = "Phase 2: verify no provider SDK imports"]
+#[test]
+fn harness_does_not_import_provider_sdks() {
+    // The harness must not import openai, anthropic, or ollama crates directly.
+    // Adapters use a shared reqwest client.
+    // This is a static analysis contract -- verified by reviewing imports.
+    // In the future, this could be a build.rs check or a cargo-deny rule.
+}
+
+// ============================================================
+// Mock implementations (will be replaced by real ones)
+// ============================================================
+
+fn create_mock_adapter() -> Box<dyn LLMAdapter> {
+    unimplemented!("Phase 2")
+}
+
+fn default_model_config() -> ModelConfig {
+    ModelConfig {
+        max_tokens: 100,
+        temperature: 0.7,
+        stream: true,
+        tools: None,
+        response_format: None,
+    }
+}
+
+#[allow(dead_code)]
+fn _suppress_unused() {
+    let _ = LLMError::Network(String::new());
+    let _ = ResponseEvent::Chunk(String::new());
+    let _ = Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: Cost(0),
+    };
+    let _ = ModelCapabilities {
+        streaming: false,
+        tool_calling: false,
+        structured_output: false,
+        vision: false,
+        max_context_tokens: 0,
+    };
+    let _ = ModelCapabilities {
+        streaming: true,
+        tool_calling: true,
+        structured_output: true,
+        vision: true,
+        max_context_tokens: 128000,
+    };
+}
